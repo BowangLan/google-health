@@ -34,7 +34,7 @@
     <p class="text-lg opacity-80 max-w-3xl">
       Short answer: <strong>nothing, until you push.</strong> Writing a file only changes your disk.
       <code>fsync</code> notices it because it has no <code>id</code>, and <code>push</code> is the only
-      command that ever writes to Google — creating, updating and deleting alike.
+      command that ever writes to Google — creating, replacing and deleting alike.
       <code>fsync add</code> is just this flow with the file written for you.
     </p>
   </header>
@@ -144,6 +144,76 @@ Ate half of it.                  <span class="c">← your notes survive</span></
 
   <div class="rule my-10"></div>
 
+  <!-- ─────────── Editing ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-1">Editing: replaced, not patched</h2>
+    <p class="opacity-75 mb-5 max-w-3xl">Edit the frontmatter of a synced file and push. The entry is
+      <strong>replaced</strong> — a new one created, the old one deleted — so it comes back with a
+      <strong>new id</strong>, and the file is renamed to match.</p>
+
+    <div class="card card-border bg-base-100 mb-4">
+      <div class="card-body gap-3">
+        <div class="cmd"><code>$ ./fsync status
+  <span class="s">edit</span>  2026-09-23/1558--black-sesame-soymilk--8889828334113072990.md  <span class="c">-> replaced remotely; gets a new id</span>
+
+$ ./fsync push
+    <span class="s">ok</span>  2026-09-23/1558--black-sesame-soymilk--3843781039477682293.md  <span class="c">replaced 8889828334113072990</span></code></div>
+        <p class="text-sm opacity-70">Same file, same content, different id — and a different filename,
+          because the id is part of it.</p>
+      </div>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <h3 class="font-bold">Why there is no PATCH</h3>
+          <p class="text-sm opacity-80">Not a design preference. The v4 API has no working update for
+            <code>nutrition-log</code> — tested against the live API, both kinds of entry:</p>
+          <div class="overflow-x-auto rounded-box border border-base-content/10">
+            <table class="table table-sm">
+              <thead><tr><th>Entry</th><th>PATCH result</th></tr></thead>
+              <tbody>
+                <tr><td>Anonymous <span class="opacity-60">(no <code>food_ref</code>)</span></td>
+                    <td class="text-error"><code>500 INTERNAL</code><br><span class="opacity-70 text-xs">even with nothing changed</span></td></tr>
+                <tr><td>Identified <span class="opacity-60">(has <code>food_ref</code>)</span></td>
+                    <td class="text-error"><code>400 Invalid argument:<br>data_point.name</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-sm opacity-70"><code>updateMask</code> is rejected on this endpoint as an unbindable
+            query parameter. Sending <code>{"dataPoint": {…}}</code> returns <em>Unknown name dataPoint</em>,
+            which proves the bare <code>{"nutritionLog": …}</code> body <code>fsync</code> already sends is the
+            correct shape. And Google's own CLI registers no <code>update</code> operation for the type
+            (<code>pkg/types/registry.go:512</code>, under a comment saying operations were confirmed by probing
+            the live API). Create and delete both work, so an edit is expressed as both.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <h3 class="font-bold">The create runs first</h3>
+          <div class="cmd"><code><span class="k">POST</span>   …/dataPoints          <span class="c">← new version</span>
+<span class="k">POST</span>   …/dataPoints:batchDelete  <span class="c">← old id</span></code></div>
+          <p class="text-sm opacity-80">The order is the safety property. If the create fails, nothing has
+            changed and the original entry is still there. Deleting first would lose the entry outright the
+            moment the create then failed.</p>
+          <p class="text-sm opacity-80">The cost of that order is the other direction: if the create lands but
+            the delete doesn't, a duplicate is left behind. <code>fsync</code> warns and names the old id,
+            because nothing else will catch it — no file claims that id any more, so it can never surface as a
+            pending delete.</p>
+        </div>
+      </div>
+    </div>
+
+    <div role="alert" class="alert alert-warning alert-soft mt-4">
+      <span class="text-sm"><strong>Ids are not stable across edits.</strong> Anything referencing an entry by
+        id — a note, a script, a bookmark — needs updating afterwards. If that matters more than the edit,
+        delete and re-add by hand instead.</span>
+    </div>
+  </section>
+
+  <div class="rule my-10"></div>
+
   <!-- ─────────── State diagram ─────────── -->
   <section class="mb-10">
     <h2 class="text-2xl font-bold mb-1">The five states a file can be in</h2>
@@ -154,7 +224,7 @@ Ate half of it.                  <span class="c">← your notes survive</span></
     <div class="card card-border bg-base-100">
       <div class="card-body">
         <svg viewBox="0 0 900 340" role="img" aria-labelledby="states-title" style="width:100%">
-          <title id="states-title">State machine: a new file becomes in-sync via push; editing makes it modified; pushing a modification returns it to in-sync; a create whose id was lost becomes an orphan until pull recovers it</title>
+          <title id="states-title">State machine: a new file becomes in-sync via push; editing makes it modified; pushing a modification replaces the remote entry, returning the file to in-sync under a new id; deleting a file marks it deleted until push removes it remotely; a create whose id was lost becomes an orphan until pull recovers it</title>
           <defs>
             <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -177,7 +247,7 @@ Ate half of it.                  <span class="c">← your notes survive</span></
             </g>
 
             <!-- MODIFIED -->
-            <g id="s-mod"><title>modified: has an id, but its content no longer matches the digest</title>
+            <g id="s-mod"><title>modified: has an id, but its content no longer matches the digest. Pushing replaces the remote entry, so the file returns to in sync under a new id.</title>
               <rect x="712" y="112" width="168" height="72" rx="10" stroke-width="2.5"/>
               <text x="796" y="142" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" stroke="none">modified</text>
               <text x="796" y="164" text-anchor="middle" font-size="12" fill="currentColor" stroke="none" opacity=".7">digest differs</text>
@@ -216,10 +286,11 @@ Ate half of it.                  <span class="c">← your notes survive</span></
             <path d="M552,140 L706,140" stroke-width="2" marker-end="url(#ar)"/>
             <text x="629" y="131" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">you edit it</text>
 
-            <!-- modified -> in sync -->
+            <!-- modified -> in sync: a replacement, so the id changes -->
             <path d="M706,166 L552,166" stroke-width="2" marker-end="url(#ar)"/>
             <text x="629" y="184" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">push</text>
-            <text x="629" y="200" text-anchor="middle" font-size="11" fill="currentColor" stroke="none" opacity=".6">PATCH — may be refused</text>
+            <text x="629" y="200" text-anchor="middle" font-size="11" fill="currentColor" stroke="none" opacity=".6">POST new · delete old</text>
+            <text x="629" y="216" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor" stroke="none" opacity=".85">new id · file renamed</text>
 
             <!-- new -> orphan -->
             <path d="M110,190 L110,279 L360,279" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ar)"/>
@@ -258,13 +329,13 @@ Ate half of it.                  <span class="c">← your notes survive</span></
             <td><code>status</code></td>
             <td class="opacity-60">none</td>
             <td>no</td>
-            <td>Classifies every file into the four states above.</td>
+            <td>Classifies every file into the five states above. Flags an edited file as getting a new id.</td>
           </tr>
           <tr>
             <td><code>push</code></td>
             <td class="text-warning font-semibold">writes</td>
             <td>yes</td>
-            <td>POSTs new entries, PATCHes modified ones, deletes entries whose files are gone. Writes back ids and digests. The only command that mutates Google.</td>
+            <td>POSTs new entries; <strong>replaces</strong> modified ones (POST the new version, then <code>:batchDelete</code> the old); deletes entries whose files are gone, after asking. Writes back ids and digests. The only command that mutates Google.</td>
           </tr>
           <tr>
             <td><code>add</code></td>
@@ -284,29 +355,51 @@ Ate half of it.                  <span class="c">← your notes survive</span></
             <td>no</td>
             <td>Sums a day from local files only.</td>
           </tr>
+          <tr>
+            <td><code>config</code></td>
+            <td class="opacity-60">none</td>
+            <td>no</td>
+            <td>Prints where <code>food_dir</code>, <code>ghealth</code> and the index resolved to, and which file decided it.</td>
+          </tr>
         </tbody>
       </table>
     </div>
-    <p class="text-sm opacity-60 mt-2"><code>push --dry-run</code> prints the exact payloads and sends nothing.</p>
+    <p class="text-sm opacity-60 mt-2"><code>push --dry-run</code> prints the exact payloads and sends nothing.
+      The food folder need not live beside the script — set <code>food_dir</code> in <code>fsync.toml</code>,
+      or pass <code>--food-dir</code> / <code>$FSYNC_FOOD_DIR</code>.</p>
   </section>
 
   <div class="rule my-10"></div>
 
   <!-- ─────────── Where it goes wrong ─────────── -->
   <section class="mb-10">
-    <h2 class="text-2xl font-bold mb-4">The five ways this goes wrong</h2>
+    <h2 class="text-2xl font-bold mb-4">The six ways this goes wrong</h2>
     <div class="grid gap-4 md:grid-cols-2">
 
       <div class="card card-border bg-base-100">
         <div class="card-body gap-2">
           <div class="flex items-center gap-2 flex-wrap">
-            <h3 class="font-bold">Editing an anonymous entry</h3>
-            <span class="badge badge-sm badge-error badge-soft">common</span>
+            <h3 class="font-bold">An edit changes the entry's id</h3>
+            <span class="badge badge-sm badge-warning badge-soft">by design</span>
           </div>
-          <p class="text-sm opacity-80">An entry without a <code>food_ref</code> is an anonymous food log, and
-            the API refuses to update those. <strong>16 of your 20 entries are anonymous.</strong>
-            <code>status</code> warns before you push; <code>push</code> reports the API's actual rejection and
-            tells you to delete and recreate instead.</p>
+          <p class="text-sm opacity-80">Because an edit is a replacement, the entry you get back is a different
+            record with a different id, and the file is renamed. Nothing on disk is lost — but any note, script
+            or link that pinned the old id now points at nothing. <code>status</code> says so before you push.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="font-bold">A replacement that half-lands</h3>
+            <span class="badge badge-sm badge-warning badge-soft">guarded</span>
+          </div>
+          <p class="text-sm opacity-80"><strong>Create fails:</strong> nothing changed, the original entry is
+            untouched, and <code>push</code> says which id was left alone. That is the whole reason create runs
+            before delete.</p>
+          <p class="text-sm opacity-80"><strong>Create lands, delete fails:</strong> a duplicate is left in
+            Google Health. <code>fsync</code> warns and names the old id, because no file claims it any more —
+            so it will never turn up as a pending delete. Remove it by hand.</p>
         </div>
       </div>
 
@@ -364,10 +457,18 @@ Ate half of it.                  <span class="c">← your notes survive</span></
           and the <code>--yes</code> override; edit detection; new-file detection from any location; the
           day-folder migration; <code>tidy</code>; and <code>total</code> cross-checked against the API's own
           <code>daily-rollup</code>.</p>
-        <p class="text-sm"><strong>Still unexercised:</strong> a live <code>PATCH</code>. Updates have only
-          run under <code>--dry-run</code>, and 16 of the 22 entries are anonymous, which the API refuses to
-          update at all — so the update path's success case is untested. The orphan guard is likewise a
-          fallback that has only been triggered artificially.</p>
+        <p class="text-sm"><strong>The replace path has now run for real.</strong> An entry's meal type was
+          edited and pushed: the replacement returned <code>200</code> with the edited <code>mealType</code>
+          and its macros intact, the old id returned <code>404</code>, and the following <code>pull</code>
+          settled to <em>unchanged</em>. The index and filename both moved to the new id.</p>
+        <p class="text-sm"><strong>What this replaced:</strong> this page used to list "a live
+          <code>PATCH</code>" as the one untested path. It turned out not to be untested so much as
+          impossible — <code>PATCH</code> fails for <em>both</em> anonymous and identified entries, which is
+          why replacement exists at all. The earlier claim here that anonymous entries specifically could not
+          be updated, and identified ones could, was wrong.</p>
+        <p class="text-sm"><strong>Still unexercised:</strong> both half-landed branches of a replacement
+          (create fails; create lands but delete fails), and the orphan guard — all three are fallbacks that
+          have only been triggered artificially.</p>
       </div>
     </div>
   </section>
