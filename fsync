@@ -392,7 +392,8 @@ def remote_to_fm(dp: dict) -> dict:
     if sv:
         fm["serving"] = {"amount": sv.get("amount", 1),
                          "unit": sv.get("foodMeasurementUnitDisplayName", "serving")}
-    # Identified foods reference the catalog and are the only updatable ones.
+    # Identified foods reference Google's catalog rather than naming the food
+    # inline. Neither kind can be patched; see replace_entry.
     if n.get("food"):
         fm["food_ref"] = n["food"]
     src = dp.get("dataSource") or {}
