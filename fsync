@@ -1,0 +1,880 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml>=6"]
+# ///
+"""
+fsync — sync Google Health food entries between the API and plain files.
+
+One entry, one file. Files are Markdown with YAML frontmatter: the frontmatter
+is the data, the body is free-form notes that never leave this machine.
+
+    fsync add lunch "Burrito" 650 -p 38
+                            create an entry as a file and push it
+    fsync pull --days 7     fetch remote entries into ./food/
+    fsync status            what is new, changed, or in sync
+    fsync push              create new entries, update changed ones
+    fsync tidy              file entries into their day folders
+
+Delete an entry by deleting its file, then pushing. push asks before removing
+anything from Google Health; --yes skips the prompt.
+    fsync total yesterday   calories for a day, from local files
+
+The filename is a human convenience — date, name and id — and is never parsed.
+Everything is read from the file's own frontmatter.
+
+Anonymous entries (no `food_ref`) cannot be updated by the API, only created
+and deleted. push reports that per file rather than failing silently.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+HERE = Path(__file__).resolve().parent
+FOOD_DIR = HERE / "food"
+GHEALTH = Path(os.environ.get("GHEALTH", HERE / "google-health-cli" / "ghealth"))
+API = "https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints"
+
+MEALS = {"BREAKFAST", "LUNCH", "DINNER", "SNACK", "ANYTIME"}
+
+# Fields the user owns. Everything else in the frontmatter is metadata written
+# by this tool, and changing it locally has no effect on the remote entry.
+OWNED = ("meal", "name", "start", "end", "kcal", "carbs_g", "fat_g",
+         "nutrients", "serving", "food_ref")
+
+
+# ── terminal ──────────────────────────────────────────────────────────────
+
+_TTY = sys.stdout.isatty()
+
+
+def _c(code: str, s: str) -> str:
+    return f"\033[{code}m{s}\033[0m" if _TTY else s
+
+
+def green(s): return _c("32", s)
+def red(s): return _c("31", s)
+def yellow(s): return _c("33", s)
+def dim(s): return _c("2", s)
+def bold(s): return _c("1", s)
+
+
+def rel(path: Path) -> str:
+    """Path as shown to the user: <day>/<file>."""
+    try:
+        return str(path.relative_to(FOOD_DIR))
+    except ValueError:
+        return path.name
+
+
+def die(msg: str) -> None:
+    print(f"fsync: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+# ── auth ──────────────────────────────────────────────────────────────────
+
+def access_token() -> str:
+    """Borrow ghealth's token; it owns the refresh cycle, we just read it."""
+    if not GHEALTH.exists():
+        die(f"ghealth not found at {GHEALTH}")
+    subprocess.run([str(GHEALTH), "auth", "refresh"],
+                   capture_output=True, check=False)
+    out = subprocess.run([str(GHEALTH), "auth", "export"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        die(f"could not read credentials: {out.stderr.strip()}")
+    tok = json.loads(out.stdout).get("access_token", "")
+    if not tok:
+        die(f"no access token; run: {GHEALTH} auth login")
+    return tok
+
+
+def api_call(method: str, url: str, token: str,
+             body: dict | None = None) -> tuple[int, Any]:
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/json")
+    if data:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req) as r:
+            raw = r.read().decode()
+            return r.status, (json.loads(raw) if raw.strip() else {})
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode()
+        try:
+            return e.code, json.loads(raw)
+        except json.JSONDecodeError:
+            return e.code, {"raw": raw}
+    except urllib.error.URLError as e:
+        return 0, {"error": {"message": f"network: {e.reason}"}}
+
+
+def api_error(payload: Any) -> str:
+    """Pull a human sentence out of whatever the API returned."""
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, dict):
+            msg = err.get("message") or ""
+            status = err.get("status") or ""
+            details = err.get("details") or []
+            extra = ""
+            for d in details:
+                if isinstance(d, dict):
+                    for k in ("reason", "description", "fieldViolations"):
+                        if k in d:
+                            extra = f" ({json.dumps(d[k])[:200]})"
+                            break
+            return f"{status + ': ' if status else ''}{msg}{extra}".strip()
+        if "raw" in payload:
+            return str(payload["raw"])[:300]
+    return json.dumps(payload)[:300]
+
+
+# ── time ──────────────────────────────────────────────────────────────────
+
+def from_api_time(utc: str, offset: str | None) -> str:
+    """'2026-09-23T16:00:00Z' + '-25200s' -> '2026-09-23T09:00:00-07:00'."""
+    t = dt.datetime.fromisoformat(utc.replace("Z", "+00:00"))
+    secs = int((offset or "0s").rstrip("s"))
+    return t.astimezone(dt.timezone(dt.timedelta(seconds=secs))).isoformat()
+
+
+def to_api_time(local: Any) -> tuple[str, str]:
+    """Local ISO (or datetime) -> ('...Z', '-25200s')."""
+    if isinstance(local, dt.datetime):
+        t = local
+    else:
+        t = dt.datetime.fromisoformat(str(local))
+    if t.tzinfo is None:
+        t = t.astimezone()
+    off = int(t.utcoffset().total_seconds())
+    utc = t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc, f"{off}s"
+
+
+# ── file format ───────────────────────────────────────────────────────────
+
+def slug(name: str, limit: int = 44) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
+    return (s[:limit].rstrip("-") or "entry")
+
+
+def day_of(fm: dict) -> str:
+    """The entry's local day, from its own data. Names the day folder."""
+    try:
+        return dt.datetime.fromisoformat(str(fm["start"])).strftime("%Y-%m-%d")
+    except Exception:
+        return "undated"
+
+
+def filename(fm: dict) -> str:
+    """HHMM--slug--id.md. Decorative: never parsed back."""
+    try:
+        stamp = dt.datetime.fromisoformat(str(fm["start"])).strftime("%H%M")
+    except Exception:
+        stamp = "0000"
+    parts = [stamp, slug(fm.get("name", ""))]
+    if fm.get("id"):
+        parts.append(str(fm["id"]))
+    return "--".join(parts) + ".md"
+
+
+def entry_path(fm: dict) -> Path:
+    """Canonical location: food/<day>/<file>. Derived only from frontmatter."""
+    return FOOD_DIR / day_of(fm) / filename(fm)
+
+
+def relocate(path: Path, fm: dict) -> Path:
+    """Move a file to its canonical day folder, pruning the old one if empty.
+
+    Entries are found anywhere under food/, so a file dropped in the wrong
+    place — or one whose date was edited — is filed correctly on the next run.
+    """
+    want = entry_path(fm)
+    if path == want:
+        return path
+    if want.exists() and want.resolve() != path.resolve():
+        return path          # refuse to clobber a different entry
+    want.parent.mkdir(parents=True, exist_ok=True)
+    path.rename(want)
+    old = path.parent
+    if old != FOOD_DIR and old.is_dir() and not any(old.iterdir()):
+        old.rmdir()
+    return want
+
+
+def tidy_numbers(v: Any) -> Any:
+    """3.0 -> 3, so hand-written and generated files look the same."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, dict):
+        return {k: tidy_numbers(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [tidy_numbers(x) for x in v]
+    return v
+
+
+def digest(fm: dict) -> str:
+    """Hash of the user-owned fields only, so metadata churn isn't a change.
+
+    Values are normalised first: the file is written through tidy_numbers, so
+    hashing the raw form would make an entry differ from itself the moment it
+    was read back (1650.0 written as 1650, then re-read as an int).
+    """
+    payload = {k: tidy_numbers(fm.get(k))
+               for k in OWNED if fm.get(k) not in (None, "", {})}
+    blob = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def read_entry(path: Path) -> tuple[dict, str]:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        raise ValueError("missing YAML frontmatter (file must start with ---)")
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError("frontmatter is not closed with ---")
+    fm = yaml.safe_load(parts[1])
+    if not isinstance(fm, dict):
+        raise ValueError("frontmatter is not a mapping")
+    return fm, parts[2].lstrip("\n")
+
+
+def write_entry(path: Path, fm: dict, body: str = "") -> None:
+    # Stable key order so diffs stay readable across pulls.
+    order = ["id", "meal", "name", "start", "end", "kcal", "carbs_g", "fat_g",
+             "nutrients", "serving", "food_ref", "source", "sync"]
+    ordered = {k: fm[k] for k in order if k in fm and fm[k] not in (None, "")}
+    for k, v in fm.items():
+        if k not in ordered and v not in (None, ""):
+            ordered[k] = v
+    head = yaml.safe_dump(tidy_numbers(ordered), sort_keys=False,
+                          allow_unicode=True, default_flow_style=False).rstrip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{head}\n---\n\n{body.strip()}\n", encoding="utf-8")
+
+
+# ── conversion ────────────────────────────────────────────────────────────
+
+def remote_to_fm(dp: dict) -> dict:
+    n = dp.get("nutritionLog", {})
+    iv = n.get("interval", {})
+    fm: dict[str, Any] = {
+        "id": str(dp.get("name", "")).rsplit("/", 1)[-1],
+        "meal": n.get("mealType", "ANYTIME"),
+        "name": n.get("foodDisplayName", ""),
+        "start": from_api_time(iv.get("startTime", ""), iv.get("startUtcOffset")),
+        "kcal": (n.get("energy") or {}).get("kcal"),
+    }
+    if iv.get("endTime"):
+        fm["end"] = from_api_time(iv["endTime"], iv.get("endUtcOffset"))
+    if (n.get("totalCarbohydrate") or {}).get("grams") is not None:
+        fm["carbs_g"] = n["totalCarbohydrate"]["grams"]
+    if (n.get("totalFat") or {}).get("grams") is not None:
+        fm["fat_g"] = n["totalFat"]["grams"]
+    nutrients = {x["nutrient"]: x["quantity"]["grams"]
+                 for x in n.get("nutrients", [])
+                 if x.get("nutrient") and (x.get("quantity") or {}).get("grams") is not None}
+    if nutrients:
+        fm["nutrients"] = nutrients
+    sv = n.get("serving") or {}
+    if sv:
+        fm["serving"] = {"amount": sv.get("amount", 1),
+                         "unit": sv.get("foodMeasurementUnitDisplayName", "serving")}
+    # Identified foods reference the catalog and are the only updatable ones.
+    if n.get("food"):
+        fm["food_ref"] = n["food"]
+    src = dp.get("dataSource") or {}
+    if src.get("platform"):
+        fm["source"] = src["platform"]
+    return fm
+
+
+def fm_to_remote(fm: dict) -> dict:
+    for key in ("meal", "name", "start", "kcal"):
+        if fm.get(key) in (None, ""):
+            raise ValueError(f"'{key}' is required")
+    meal = str(fm["meal"]).upper()
+    if meal not in MEALS:
+        raise ValueError(f"meal must be one of {', '.join(sorted(MEALS))}")
+    try:
+        kcal = float(fm["kcal"])
+    except (TypeError, ValueError):
+        raise ValueError(f"kcal must be a number, got {fm['kcal']!r}")
+
+    su, so = to_api_time(fm["start"])
+    if fm.get("end"):
+        eu, eo = to_api_time(fm["end"])
+    else:
+        t = dt.datetime.fromisoformat(str(fm["start"]))
+        eu, eo = to_api_time(t + dt.timedelta(minutes=1))
+
+    n: dict[str, Any] = {
+        "interval": {"startTime": su, "endTime": eu,
+                     "startUtcOffset": so, "endUtcOffset": eo},
+        "mealType": meal,
+        "energy": {"kcal": kcal, "userProvidedUnit": "CALORIE"},
+    }
+    if fm.get("food_ref"):
+        n["food"] = fm["food_ref"]
+    else:
+        n["foodDisplayName"] = str(fm["name"])
+    if fm.get("carbs_g") is not None:
+        n["totalCarbohydrate"] = {"grams": float(fm["carbs_g"])}
+    if fm.get("fat_g") is not None:
+        n["totalFat"] = {"grams": float(fm["fat_g"])}
+    if fm.get("nutrients"):
+        n["nutrients"] = [{"nutrient": str(k).upper(),
+                           "quantity": {"grams": float(v)}}
+                          for k, v in dict(fm["nutrients"]).items()]
+    sv = fm.get("serving") or {}
+    n["serving"] = {"amount": float(sv.get("amount", 1)),
+                    "foodMeasurementUnitDisplayName": str(sv.get("unit", "serving"))}
+    return {"nutritionLog": n}
+
+
+# ── local index ───────────────────────────────────────────────────────────
+
+INDEX = HERE / ".fsync-index.json"
+
+
+def load_index() -> dict[str, dict]:
+    """Entries we have seen. A known id with no file means you deleted it."""
+    if not INDEX.exists():
+        return {}
+    try:
+        return json.loads(INDEX.read_text()).get("entries", {})
+    except Exception:
+        return {}
+
+
+def save_index(by_id: dict) -> None:
+    entries = {
+        eid: {"name": fm.get("name", ""), "start": str(fm.get("start", "")),
+              "kcal": fm.get("kcal"), "path": rel(path)}
+        for eid, (path, fm, _) in by_id.items()
+    }
+    INDEX.write_text(json.dumps({"entries": entries}, indent=2, sort_keys=True),
+                     encoding="utf-8")
+
+
+def pending_deletes(by_id: dict) -> dict[str, dict]:
+    """Known ids with no file on disk."""
+    return {eid: meta for eid, meta in load_index().items() if eid not in by_id}
+
+
+Entry = tuple[Path, dict, str]
+
+
+def scan() -> tuple[dict[str, Entry], list[Entry], list[Entry], list[tuple[Path, str]]]:
+    """Return (by_id, new, orphans, broken).
+
+    An *orphan* was created remotely but its id could not be read back from the
+    response, so it must not be pushed again — that would duplicate it. `pull`
+    adopts the id and the file becomes ordinary.
+    """
+    by_id: dict[str, Entry] = {}
+    new: list[Entry] = []
+    orphans: list[Entry] = []
+    broken: list[tuple[Path, str]] = []
+    if not FOOD_DIR.exists():
+        return by_id, new, orphans, broken
+    for path in sorted(FOOD_DIR.rglob("*.md")):
+        try:
+            fm, body = read_entry(path)
+        except Exception as e:
+            broken.append((path, str(e)))
+            continue
+        if fm.get("id"):
+            by_id[str(fm["id"])] = (path, fm, body)
+        elif (fm.get("sync") or {}).get("created"):
+            orphans.append((path, fm, body))
+        else:
+            new.append((path, fm, body))
+    return by_id, new, orphans, broken
+
+
+def match_key(fm: dict) -> tuple:
+    """Identity of an entry independent of its id, for reconciling orphans."""
+    try:
+        t = dt.datetime.fromisoformat(str(fm["start"])).astimezone(dt.timezone.utc)
+        stamp = t.replace(microsecond=0).isoformat()
+    except Exception:
+        stamp = str(fm.get("start"))
+    return (stamp, str(fm.get("name", "")).strip().lower(),
+            float(fm.get("kcal") or 0))
+
+
+def is_dirty(fm: dict) -> bool:
+    stored = (fm.get("sync") or {}).get("digest")
+    return stored != digest(fm)
+
+
+# ── commands ──────────────────────────────────────────────────────────────
+
+def cmd_pull(args) -> int:
+    since = (dt.date.today() - dt.timedelta(days=args.days - 1)).isoformat()
+    cmd = [str(GHEALTH), "data", "nutrition-log", "list",
+           "--from", since, "--to", "today", "--raw", "--limit", str(args.limit)]
+    print(dim(f"$ {' '.join(cmd)}"))
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    if out.returncode != 0:
+        die(f"pull failed: {out.stderr.strip() or out.stdout.strip()}")
+    try:
+        payload = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        die(f"unexpected response: {out.stdout[:300]}")
+    points = payload.get("dataPoints", [])
+    if payload.get("nextPageToken"):
+        print(yellow(f"  note: more pages exist; raise --limit above {args.limit}"))
+
+    by_id, _, orphans, _ = scan()
+    created = updated = skipped = unchanged = adopted = 0
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+    # Reconcile orphans first: an entry we created but could not name.
+    if orphans:
+        remote_by_key = {match_key(remote_to_fm(dp)): remote_to_fm(dp)["id"]
+                         for dp in points}
+        for path, fm, body in orphans:
+            found = remote_by_key.get(match_key(fm))
+            if not found:
+                print(f"  {yellow('orph')}  {rel(path)}")
+                print(dim("         created remotely but not found in this window;"))
+                print(dim("         widen --days, or delete the file if it was a mistake"))
+                continue
+            fm["id"] = found
+            fm["sync"] = {"pulled": now, "digest": digest(fm)}
+            write_entry(path, fm, body)
+            moved = relocate(path, fm)
+            by_id[found] = (moved, fm, body)
+            print(f"  {green('adop')}  {rel(moved)}  {dim('id recovered')}")
+            adopted += 1
+
+    doomed = pending_deletes(by_id)
+    for dp in points:
+        fm = remote_to_fm(dp)
+        eid = fm["id"]
+        if eid in doomed:
+            # Deleted locally and not yet pushed. Re-creating it here would
+            # silently undo the deletion.
+            print(f"  {yellow('held')}  {doomed[eid].get('path', eid)}")
+            print(dim("         deleted locally; run 'fsync push' to delete it"))
+            print(dim("         remotely, or 'fsync pull --force' to restore it"))
+            skipped += 1
+            continue
+        fm["sync"] = {"pulled": now, "digest": digest(fm)}
+        existing = by_id.get(eid)
+
+        if existing:
+            path, old_fm, body = existing
+            if is_dirty(old_fm) and not args.force:
+                print(f"  {yellow('skip')}  {rel(path)}")
+                print(dim(f"         locally modified; --force to overwrite"))
+                skipped += 1
+                continue
+            if digest(old_fm) == fm["sync"]["digest"]:
+                # Content matches, but the file may still be misfiled.
+                moved = relocate(path, old_fm)
+                if moved != path:
+                    print(f"  {green('move')}  {rel(moved)}")
+                unchanged += 1
+                continue
+            write_entry(path, fm, body)
+            path = relocate(path, fm)
+            print(f"  {green('pull')}  {rel(path)}")
+            updated += 1
+        else:
+            path = entry_path(fm)
+            write_entry(path, fm)
+            print(f"  {green(' new')}  {rel(path)}")
+            created += 1
+
+    print()
+    if args.force and doomed:
+        INDEX.unlink(missing_ok=True)          # --force abandons the deletions
+    save_index(scan()[0])
+    tail = f", {adopted} adopted" if adopted else ""
+    print(f"{bold('pulled')} {len(points)} entries since {since}: "
+          f"{created} new, {updated} updated, {unchanged} unchanged, "
+          f"{skipped} skipped{tail}")
+    return 0
+
+
+def cmd_status(args) -> int:
+    by_id, new, orphans, broken = scan()
+    dirty = [(p, fm) for p, fm, _ in by_id.values() if is_dirty(fm)]
+
+    for path, err in broken:
+        print(f"  {red('bad ')}  {rel(path)}")
+        print(dim(f"         {err}"))
+    for path, fm, _ in new:
+        print(f"  {green(' new')}  {rel(path)}  {dim('-> will be created')}")
+    for path, fm in dirty:
+        why = "" if fm.get("food_ref") else dim("  (anonymous: API may reject the update)")
+        print(f"  {yellow('edit')}  {rel(path)}{why}")
+
+    for path, fm, _ in orphans:
+        print(f"  {yellow('hold')}  {rel(path)}  {dim('created remotely; run pull to recover its id')}")
+
+    doomed = pending_deletes(by_id)
+    for eid, meta in doomed.items():
+        print(f"  {red('del ')}  {meta.get('path', eid)}  "
+              f"{dim('deleted locally; push removes it from Google Health')}")
+
+    clean = len(by_id) - len(dirty)
+    print()
+    print(f"{bold('status')} {clean} in sync, {len(dirty)} modified, "
+          f"{len(new)} new, {len(doomed)} deleted, "
+          f"{len(orphans)} awaiting pull, {len(broken)} unreadable")
+    if not (dirty or new or orphans or broken or doomed):
+        print(dim("nothing to push"))
+    return 0
+
+
+def delete_remote(ids: list[str], token: str) -> tuple[bool, str]:
+    """Delete entries. The API has no HTTP DELETE; it uses :batchDelete."""
+    names = [f"users/me/dataTypes/nutrition-log/dataPoints/{i}" for i in ids]
+    status, resp = api_call("POST", f"{API}:batchDelete", token, {"names": names})
+    if status not in (200, 201, 204):
+        return False, f"HTTP {status}: {api_error(resp)}"
+    return True, ""
+
+
+def confirm_deletes(doomed: dict[str, dict], assume_yes: bool) -> bool:
+    """Deleting remote records is irreversible, so it is opt-in every time."""
+    print(f"{bold('about to delete')} {len(doomed)} "
+          f"{'entry' if len(doomed) == 1 else 'entries'} from Google Health:")
+    for eid, meta in sorted(doomed.items(), key=lambda kv: str(kv[1].get("start"))):
+        when = str(meta.get("start", ""))[:16].replace("T", " ")
+        kcal = meta.get("kcal")
+        kcal_s = f"{int(kcal)} kcal" if isinstance(kcal, (int, float)) else ""
+        print(f"  {red('del ')}  {when}  {str(meta.get('name', ''))[:40]:<40} {kcal_s}")
+    print(dim("  this cannot be undone"))
+    print()
+    if assume_yes:
+        print(dim("  --yes given; proceeding"))
+        return True
+    if not sys.stdin.isatty():
+        print(red("  refusing to delete without a terminal; pass --yes"))
+        return False
+    try:
+        reply = input(f"  {yellow('?')} delete these? [y/N] ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return reply.strip().lower().startswith("y")
+
+
+def push_entry(action: str, path: Path, fm: dict, body: str,
+               token: str | None, dry: bool) -> bool:
+    """Send one entry. Returns True on success. Rewrites the file in place."""
+    try:
+        payload = fm_to_remote(fm)
+    except ValueError as e:
+        print(f"  {red('FAIL')}  {rel(path)}")
+        print(dim(f"         invalid entry: {e}"))
+        return False
+
+    if dry:
+        verb = "POST" if action == "create" else "PATCH"
+        print(f"  {dim(verb)}  {rel(path)}")
+        print(dim("         " + json.dumps(payload["nutritionLog"])[:160] + "..."))
+        return True
+
+    if action == "create":
+        status, resp = api_call("POST", API, token, payload)
+    else:
+        status, resp = api_call("PATCH", f"{API}/{fm['id']}", token, payload)
+
+    if status not in (200, 201):
+        print(f"  {red('FAIL')}  {rel(path)}")
+        print(dim(f"         HTTP {status}: {api_error(resp)}"))
+        if action == "update" and not fm.get("food_ref"):
+            print(dim("         this entry has no food_ref, so it is an anonymous"))
+            print(dim("         food log, which the API does not allow updating."))
+            print(dim("         delete it and create a replacement instead."))
+        return False
+
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    fm["sync"] = {"pulled": now, "digest": digest(fm)}
+    if action == "create":
+        new_id = extract_id(resp)
+        if new_id:
+            fm["id"] = new_id
+        else:
+            # Created, but unnamed. Mark it so a second push cannot duplicate
+            # it; pull matches it on time/name/kcal and fills in the id.
+            fm["sync"]["created"] = now
+            (HERE / ".last-create-response.json").write_text(
+                json.dumps(resp, indent=2), encoding="utf-8")
+            print(f"  {yellow('warn')}  {rel(path)}")
+            print(dim("         created, but no id in the response; saved it to"))
+            print(dim("         .last-create-response.json. Run 'fsync pull'."))
+    write_entry(path, fm, body)
+    path = relocate(path, fm)
+    print(f"  {green('  ok')}  {rel(path)}  {dim(action + 'd')}")
+    return True
+
+
+def extract_id(resp: Any) -> str:
+    """Find the new entry's id wherever the API chose to put it."""
+    if not isinstance(resp, dict):
+        return ""
+    for node in (resp, resp.get("response") or {}, resp.get("dataPoint") or {},
+                 (resp.get("response") or {}).get("dataPoint") or {}):
+        if isinstance(node, dict):
+            name = node.get("name") or node.get("id")
+            if name:
+                return str(name).rsplit("/", 1)[-1]
+    return ""
+
+
+def cmd_push(args) -> int:
+    by_id, new, orphans, broken = scan()
+    for path, err in broken:
+        print(f"  {red('bad ')}  {rel(path)}: {err}")
+
+    for path, fm, _ in orphans:
+        print(f"  {yellow('hold')}  {rel(path)}")
+        print(dim("         already created remotely, id unknown — run 'fsync pull'"))
+        print(dim("         to recover it. Pushing again would duplicate the entry."))
+
+    doomed = pending_deletes(by_id)
+    work: list[tuple[str, Path, dict, str]] = [("create", p, fm, b) for p, fm, b in new]
+    work += [("update", p, fm, b) for p, fm, b in by_id.values() if is_dirty(fm)]
+    if not work and not doomed:
+        print(dim("nothing to push"))
+        return 1 if broken else 0
+
+    deleted = refused = 0
+    if doomed:
+        if args.dry_run:
+            print(f"{bold('would delete')} {len(doomed)} entries:")
+            for eid, meta in doomed.items():
+                print(f"  {dim('DELETE')}  {meta.get('path', eid)}")
+            print()
+        elif confirm_deletes(doomed, args.yes):
+            token = access_token()
+            ok_del, err = delete_remote(list(doomed), token)
+            if ok_del:
+                deleted = len(doomed)
+                print(f"  {green('  ok')}  deleted {deleted} remotely")
+                idx = load_index()
+                for eid in doomed:
+                    idx.pop(eid, None)
+                INDEX.write_text(json.dumps({"entries": idx}, indent=2,
+                                            sort_keys=True), encoding="utf-8")
+            else:
+                refused = len(doomed)
+                print(f"  {red('FAIL')}  delete refused")
+                print(dim(f"         {err}"))
+        else:
+            refused = len(doomed)
+            print(dim("  deletion cancelled; files stay gone locally but the"))
+            print(dim("  remote entries remain. 'fsync pull --force' restores them."))
+        print()
+
+    if not work:
+        print(f"{bold('pushed')} 0 ok, {refused} failed"
+              + (f", {deleted} deleted" if deleted else ""))
+        return 1 if (refused or broken) else 0
+
+    token = None if args.dry_run else access_token()
+    ok = failed = 0
+    for action, path, fm, body in work:
+        if push_entry(action, path, fm, body, token, args.dry_run):
+            ok += 1
+        else:
+            failed += 1
+
+    if not args.dry_run:
+        save_index(scan()[0])
+    print()
+    label = "would push" if args.dry_run else "pushed"
+    extra = f", {deleted} deleted" if deleted else ""
+    print(f"{bold(label)} {ok} ok, {failed + refused} failed{extra}")
+    return 1 if (failed or refused) else 0
+
+
+def cmd_add(args) -> int:
+    """Create an entry as a file, then push it. The file is the record."""
+    meal = args.meal.upper()
+    if meal not in MEALS:
+        die(f"meal must be one of {', '.join(sorted(MEALS))}")
+    if args.at:
+        if not re.fullmatch(r"\d{1,2}:\d{2}", args.at):
+            die(f"--at wants HH:MM, got {args.at!r}")
+        h, m = (int(x) for x in args.at.split(":"))
+        start = dt.datetime.now().astimezone().replace(
+            hour=h, minute=m, second=0, microsecond=0)
+    else:
+        start = dt.datetime.now().astimezone().replace(microsecond=0)
+
+    fm: dict[str, Any] = {
+        "meal": meal,
+        "name": args.name,
+        "start": start.isoformat(),
+        "kcal": args.kcal,
+    }
+    if args.carbs is not None:
+        fm["carbs_g"] = args.carbs
+    if args.fat is not None:
+        fm["fat_g"] = args.fat
+    nutrients = {}
+    for key, val in (("PROTEIN", args.protein), ("SUGAR", args.sugar),
+                     ("DIETARY_FIBER", args.fiber)):
+        if val is not None:
+            nutrients[key] = val
+    if nutrients:
+        fm["nutrients"] = nutrients
+    fm["serving"] = {"amount": args.amount, "unit": args.unit}
+
+    path = entry_path(fm)
+    if path.exists():
+        die(f"{rel(path)} already exists")
+    write_entry(path, fm, args.note or "")
+    print(f"  {green(' new')}  {rel(path)}")
+
+    if args.no_push:
+        print()
+        print(dim("file written; run 'fsync push' when you want it sent"))
+        return 0
+
+    token = None if args.dry_run else access_token()
+    good = push_entry("create", path, fm, args.note or "", token, args.dry_run)
+    print()
+    print(f"{bold('added')} {args.name} · {int(args.kcal)} kcal · {meal.lower()}")
+    return 0 if good else 1
+
+
+def cmd_tidy(args) -> int:
+    """File every entry into its day folder. Local only; touches no network."""
+    by_id, new, orphans, broken = scan()
+    moved = 0
+    for path, fm, _ in list(by_id.values()) + new + orphans:
+        dest = relocate(path, fm)
+        if dest != path:
+            print(f"  {green('move')}  {rel(path)} {dim('->')} {rel(dest)}")
+            moved += 1
+    for path, err in broken:
+        print(f"  {red('bad ')}  {rel(path)}: {err}")
+    print()
+    print(f"{bold('tidied')} {moved} moved, "
+          f"{len(by_id) + len(new) + len(orphans) - moved} already in place")
+    return 1 if broken else 0
+
+
+def cmd_total(args) -> int:
+    when = args.date
+    if when == "today":
+        day = dt.date.today()
+    elif when == "yesterday":
+        day = dt.date.today() - dt.timedelta(days=1)
+    else:
+        day = dt.date.fromisoformat(when)
+
+    by_id, new, orphans, _ = scan()
+    rows = []
+    for path, fm, _ in list(by_id.values()) + new + orphans:
+        try:
+            t = dt.datetime.fromisoformat(str(fm["start"])).date()
+        except Exception:
+            continue
+        if t == day:
+            rows.append(fm)
+
+    if not rows:
+        print(f"no entries for {day}. Run: fsync pull --days 7")
+        return 1
+
+    rows.sort(key=lambda f: str(f["start"]))
+    total = 0.0
+    carbs = fat = prot = 0.0
+    for fm in rows:
+        k = float(fm.get("kcal") or 0)
+        total += k
+        carbs += float(fm.get("carbs_g") or 0)
+        fat += float(fm.get("fat_g") or 0)
+        prot += float((fm.get("nutrients") or {}).get("PROTEIN") or 0)
+        t = dt.datetime.fromisoformat(str(fm["start"])).strftime("%H:%M")
+        print(f"  {dim(t)}  {str(fm.get('meal','')):<9} {str(fm.get('name',''))[:46]:<46} "
+              f"{int(k):>5} kcal")
+    print()
+    print(f"  {bold(str(day))}  {bold(str(int(total)) + ' kcal')} "
+          f"across {len(rows)} entries")
+    print(dim(f"  carbs {carbs:.0f}g · fat {fat:.0f}g · protein {prot:.0f}g"))
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(prog="fsync", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("pull", help="fetch remote entries into ./food/")
+    sp.add_argument("--days", type=int, default=7)
+    sp.add_argument("--limit", type=int, default=500)
+    sp.add_argument("--force", action="store_true",
+                    help="overwrite locally modified files")
+    sp.set_defaults(fn=cmd_pull)
+
+    sp = sub.add_parser("status", help="what is new, changed, or in sync")
+    sp.set_defaults(fn=cmd_status)
+
+    sp = sub.add_parser("push", help="create new entries, update changed ones")
+    sp.add_argument("-n", "--dry-run", action="store_true")
+    sp.add_argument("-y", "--yes", action="store_true",
+                    help="skip the delete confirmation")
+    sp.set_defaults(fn=cmd_push)
+
+    sp = sub.add_parser("add", help="create an entry as a file, then push it")
+    sp.add_argument("meal", help="breakfast | lunch | dinner | snack | anytime")
+    sp.add_argument("name")
+    sp.add_argument("kcal", type=float)
+    sp.add_argument("-c", "--carbs", type=float, help="grams")
+    sp.add_argument("-f", "--fat", type=float, help="grams")
+    sp.add_argument("-p", "--protein", type=float, help="grams")
+    sp.add_argument("-s", "--sugar", type=float, help="grams")
+    sp.add_argument("-d", "--fiber", type=float, help="grams")
+    sp.add_argument("-u", "--unit", default="serving", help="serving unit")
+    sp.add_argument("-a", "--amount", type=float, default=1.0)
+    sp.add_argument("-t", "--at", help="HH:MM today (default: now)")
+    sp.add_argument("--note", help="free text for the file body")
+    sp.add_argument("--no-push", action="store_true", help="write the file only")
+    sp.add_argument("-n", "--dry-run", action="store_true")
+    sp.set_defaults(fn=cmd_add)
+
+    sp = sub.add_parser("tidy", help="file entries into their day folders")
+    sp.set_defaults(fn=cmd_tidy)
+
+    sp = sub.add_parser("total", help="calories for a day, from local files")
+    sp.add_argument("date", nargs="?", default="today",
+                    help="today | yesterday | YYYY-MM-DD")
+    sp.set_defaults(fn=cmd_total)
+
+    args = p.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

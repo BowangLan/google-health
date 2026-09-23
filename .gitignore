@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# Your food logs. This is personal health data — it is deliberately never
+# tracked. `fsync pull` rebuilds the whole folder from Google Health, so the
+# remote is the source of truth and nothing here is lost by not committing it.
+# ---------------------------------------------------------------------------
+/food/
+
+# Credentials ---------------------------------------------------------------
+# The OAuth client secret lives at ~/.config/ghealth/client_secret.json; the
+# copy below is whatever you dragged out of the Cloud Console during setup.
+.env
+client_secret*.json
+*.apps.googleusercontent.com.json
+
+# Local state ---------------------------------------------------------------
+# Derived, machine-specific, and rebuilt on demand.
+.fsync-index.json
+.last-create-response.json
+
+# Google's CLI: a clone plus a compiled Go binary, restored by setup-wizard.sh.
+/google-health-cli/
+
+# macOS ---------------------------------------------------------------------
+.DS_Store

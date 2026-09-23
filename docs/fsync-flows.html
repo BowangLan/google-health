@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fsync flows</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  .cmd { background: var(--color-base-300); border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+         border-radius: .6rem; padding: .85rem 1rem; overflow-x: auto; font-size: .79rem; line-height: 1.7; }
+  .cmd code { white-space: pre; display: block; }
+  .cmd .c { color: color-mix(in oklch, var(--color-base-content) 42%, transparent); }
+  .cmd .k { color: var(--color-primary); }
+  .cmd .s { color: var(--color-secondary); }
+  .rule { height: 1px; background: color-mix(in oklch, var(--color-base-content) 12%, transparent); }
+  .eyebrow { letter-spacing: .14em; text-transform: uppercase; font-size: .68rem; font-weight: 600; }
+  .stepnum { width: 1.6rem; height: 1.6rem; border-radius: 999px; display: grid; place-items: center;
+             font-size: .75rem; font-weight: 700; flex: none;
+             background: var(--color-primary); color: var(--color-primary-content); }
+</style>
+</head>
+<body class="bg-base-200 text-base-content">
+<main class="mx-auto max-w-5xl p-5 lg:p-10">
+
+  <header class="mb-9">
+    <p class="eyebrow text-primary mb-3">fsync · sync model</p>
+    <h1 class="text-4xl lg:text-5xl font-bold leading-tight mb-4">What happens when you create a food log</h1>
+    <p class="text-lg opacity-80 max-w-3xl">
+      Short answer: <strong>nothing, until you push.</strong> Writing a file only changes your disk.
+      <code>fsync</code> notices it because it has no <code>id</code>, and <code>push</code> is the only
+      command that ever writes to Google — creating, updating and deleting alike.
+      <code>fsync add</code> is just this flow with the file written for you.
+    </p>
+  </header>
+
+  <!-- ─────────── The walkthrough ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-1">Step by step</h2>
+    <p class="opacity-75 mb-5 max-w-3xl">You want to log a burrito you ate at 12:30 today.</p>
+
+    <div class="flex flex-col gap-4">
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <div class="flex items-center gap-3">
+            <span class="stepnum">1</span>
+            <h3 class="font-bold text-lg">You write a file</h3>
+          </div>
+          <p class="text-sm opacity-80">Anywhere under <code>food/</code>, any filename. Four fields are
+            required; everything else is optional.</p>
+          <div class="cmd"><code><span class="c"># food/whatever.md — the name genuinely does not matter</span>
+---
+meal: LUNCH
+name: Chicken Burrito
+start: <span class="s">'2026-09-23T12:30:00-07:00'</span>
+kcal: 650
+carbs_g: 72
+---
+Ate half of it.</code></div>
+          <p class="text-sm opacity-70">No <code>id</code> field. That absence is the entire signal —
+            it's what makes this a create rather than an update.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <div class="flex items-center gap-3">
+            <span class="stepnum">2</span>
+            <h3 class="font-bold text-lg"><code>fsync status</code> sees it</h3>
+          </div>
+          <p class="text-sm opacity-80">Every <code>.md</code> under <code>food/</code> is read at any depth,
+            and sorted by what its frontmatter says — never by where it sits or what it's called.</p>
+          <div class="cmd"><code>$ ./fsync status
+   <span class="s">new</span>  whatever.md  <span class="c">-> will be created</span>
+
+status 20 in sync, 0 modified, 1 new, 0 awaiting pull, 0 unreadable</code></div>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <div class="flex items-center gap-3">
+            <span class="stepnum">3</span>
+            <h3 class="font-bold text-lg"><code>fsync push</code> sends it</h3>
+          </div>
+          <p class="text-sm opacity-80">Validation first, locally: <code>meal</code> must be a real meal type,
+            <code>kcal</code> must be a number, the four required fields must be present. A bad file is
+            reported and skipped — it never reaches the network.</p>
+          <p class="text-sm opacity-80">Then the token: <code>ghealth auth refresh</code> runs, and the access
+            token is read out of <code>ghealth auth export</code>. <code>fsync</code> never handles OAuth itself.</p>
+          <div class="cmd"><code>POST https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints
+
+{<span class="s">"nutritionLog"</span>: {
+   <span class="s">"interval"</span>: { <span class="s">"startTime"</span>: <span class="s">"2026-09-23T19:30:00Z"</span>,
+                 <span class="s">"endTime"</span>:   <span class="s">"2026-09-23T19:31:00Z"</span>,
+                 <span class="s">"startUtcOffset"</span>: <span class="s">"-25200s"</span>, <span class="s">"endUtcOffset"</span>: <span class="s">"-25200s"</span> },
+   <span class="s">"mealType"</span>: <span class="s">"LUNCH"</span>,
+   <span class="s">"foodDisplayName"</span>: <span class="s">"Chicken Burrito"</span>,
+   <span class="s">"energy"</span>: { <span class="s">"kcal"</span>: 650, <span class="s">"userProvidedUnit"</span>: <span class="s">"CALORIE"</span> },
+   <span class="s">"totalCarbohydrate"</span>: { <span class="s">"grams"</span>: 72 },
+   <span class="s">"serving"</span>: { <span class="s">"amount"</span>: 1, <span class="s">"foodMeasurementUnitDisplayName"</span>: <span class="s">"serving"</span> } }}</code></div>
+          <p class="text-sm opacity-70">Your local time became a UTC instant plus an offset, because that's the
+            shape the API actually returns. The body of your file — "Ate half of it" — is not in the payload.
+            Notes stay on your machine.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <div class="flex items-center gap-3">
+            <span class="stepnum">4</span>
+            <h3 class="font-bold text-lg">The file rewrites itself</h3>
+          </div>
+          <p class="text-sm opacity-80">On success, the returned id goes into the frontmatter, a sync digest is
+            recorded, and the file moves to its canonical home.</p>
+          <div class="cmd"><code>$ ./fsync push
+    <span class="s">ok</span>  2026-09-23/1230--chicken-burrito--884…201.md  <span class="c">created</span>
+
+<span class="c"># food/2026-09-23/1230--chicken-burrito--884…201.md</span>
+---
+id: <span class="s">'8841002938471100201'</span>          <span class="c">← new: the join key</span>
+meal: LUNCH
+name: Chicken Burrito
+start: <span class="s">'2026-09-23T12:30:00-07:00'</span>
+kcal: 650
+carbs_g: 72
+sync:
+  pulled: <span class="s">'2026-09-23T12:31:04-07:00'</span>
+  digest: 7b21c0aa91e4f033       <span class="c">← how later edits are detected</span>
+---
+Ate half of it.                  <span class="c">← your notes survive</span></code></div>
+          <p class="text-sm opacity-70">The entry is now indistinguishable from one that was pulled down.
+            The next <code>pull</code> matches it by id and reports it unchanged.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="rule my-10"></div>
+
+  <!-- ─────────── State diagram ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-1">The five states a file can be in</h2>
+    <p class="opacity-75 mb-5 max-w-3xl">Every command is just a transition between these. Which state a file
+      is in is computed from three things: whether a file exists at all, whether it has an
+      <code>id</code>, and whether its content still hashes to the <code>digest</code> recorded at last sync.</p>
+
+    <div class="card card-border bg-base-100">
+      <div class="card-body">
+        <svg viewBox="0 0 900 340" role="img" aria-labelledby="states-title" style="width:100%">
+          <title id="states-title">State machine: a new file becomes in-sync via push; editing makes it modified; pushing a modification returns it to in-sync; a create whose id was lost becomes an orphan until pull recovers it</title>
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g fill="none" stroke="currentColor">
+
+            <!-- NEW -->
+            <g id="s-new"><title>new: a file with no id. Only push can act on it.</title>
+              <rect x="26" y="112" width="168" height="72" rx="10" stroke-width="2.5"/>
+              <text x="110" y="142" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" stroke="none">new</text>
+              <text x="110" y="164" text-anchor="middle" font-size="12" fill="currentColor" stroke="none" opacity=".7">no id</text>
+            </g>
+
+            <!-- IN SYNC -->
+            <g id="s-sync"><title>in sync: has an id, and its content matches the recorded digest</title>
+              <rect x="366" y="112" width="180" height="72" rx="10" stroke-width="3"/>
+              <text x="456" y="142" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" stroke="none">in sync</text>
+              <text x="456" y="164" text-anchor="middle" font-size="12" fill="currentColor" stroke="none" opacity=".7">id + digest match</text>
+            </g>
+
+            <!-- MODIFIED -->
+            <g id="s-mod"><title>modified: has an id, but its content no longer matches the digest</title>
+              <rect x="712" y="112" width="168" height="72" rx="10" stroke-width="2.5"/>
+              <text x="796" y="142" text-anchor="middle" font-size="16" font-weight="700" fill="currentColor" stroke="none">modified</text>
+              <text x="796" y="164" text-anchor="middle" font-size="12" fill="currentColor" stroke="none" opacity=".7">digest differs</text>
+            </g>
+
+            <!-- DELETED -->
+            <g id="s-del"><title>deleted: a known id with no file. push removes it remotely, after asking.</title>
+              <rect x="712" y="248" width="168" height="62" rx="10" stroke-width="2" stroke-dasharray="6 4"/>
+              <text x="796" y="274" text-anchor="middle" font-size="14.5" font-weight="700" fill="currentColor" stroke="none">deleted</text>
+              <text x="796" y="294" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none" opacity=".7">file gone, id known</text>
+            </g>
+            <path d="M796,190 L796,242" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+            <text x="810" y="220" font-size="11.5" fill="currentColor" stroke="none" opacity=".75">rm</text>
+            <path d="M712,279 L646,279" stroke-width="2" marker-end="url(#ar)"/>
+            <text x="679" y="268" text-anchor="middle" font-size="11" fill="currentColor" stroke="none" opacity=".75">push</text>
+            <text x="679" y="300" text-anchor="middle" font-size="10.5" fill="currentColor" stroke="none" opacity=".6">asks first</text>
+            <g id="s-gone"><title>gone: removed locally and remotely. A terminal state.</title>
+              <circle cx="612" cy="279" r="30" stroke-width="1.6" stroke-dasharray="4 4"/>
+              <text x="612" y="276" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor" stroke="none">gone</text>
+              <text x="612" y="290" text-anchor="middle" font-size="9.5" fill="currentColor" stroke="none" opacity=".65">both sides</text>
+            </g>
+
+            <!-- ORPHAN -->
+            <g id="s-orph"><title>orphan: created remotely, but the id could not be read back. Push refuses to touch it.</title>
+              <rect x="366" y="248" width="180" height="62" rx="10" stroke-width="2" stroke-dasharray="6 4"/>
+              <text x="456" y="274" text-anchor="middle" font-size="14.5" font-weight="700" fill="currentColor" stroke="none">orphan</text>
+              <text x="456" y="294" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none" opacity=".7">created, id unknown</text>
+            </g>
+
+            <!-- new -> in sync -->
+            <path d="M200,140 L360,140" stroke-width="2" marker-end="url(#ar)"/>
+            <text x="280" y="131" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">push</text>
+            <text x="280" y="115" text-anchor="middle" font-size="11" fill="currentColor" stroke="none" opacity=".6">POST · id written back</text>
+
+            <!-- in sync -> modified -->
+            <path d="M552,140 L706,140" stroke-width="2" marker-end="url(#ar)"/>
+            <text x="629" y="131" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">you edit it</text>
+
+            <!-- modified -> in sync -->
+            <path d="M706,166 L552,166" stroke-width="2" marker-end="url(#ar)"/>
+            <text x="629" y="184" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">push</text>
+            <text x="629" y="200" text-anchor="middle" font-size="11" fill="currentColor" stroke="none" opacity=".6">PATCH — may be refused</text>
+
+            <!-- new -> orphan -->
+            <path d="M110,190 L110,279 L360,279" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+            <text x="212" y="270" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none" opacity=".75">push, but no id returned</text>
+
+            <!-- orphan -> in sync -->
+            <path d="M456,242 L456,190" stroke-width="2" marker-end="url(#ar)"/>
+            <text x="474" y="218" font-size="12.5" font-weight="600" fill="currentColor" stroke="none">pull</text>
+
+            <!-- pull self loop on in sync -->
+            <path d="M400,106 C392,66 520,66 512,106" stroke-width="1.8" marker-end="url(#ar)"/>
+            <text x="456" y="62" text-anchor="middle" font-size="12" fill="currentColor" stroke="none" opacity=".75">pull refreshes from remote</text>
+
+            <text x="26" y="34" font-size="12" font-weight="700" fill="currentColor" stroke="none" opacity=".5">LOCAL ONLY</text>
+            <text x="26" y="52" font-size="11" fill="currentColor" stroke="none" opacity=".5">writing a file changes nothing remote</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── Command table ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-4">What each command touches</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100">
+      <table class="table table-zebra">
+        <thead><tr><th>Command</th><th>Network</th><th>Writes files</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>pull</code></td>
+            <td class="text-success font-semibold">reads</td>
+            <td>yes</td>
+            <td>Fetches the window, writes new entries, refreshes unchanged ones, adopts orphans. Skips files you've edited.</td>
+          </tr>
+          <tr>
+            <td><code>status</code></td>
+            <td class="opacity-60">none</td>
+            <td>no</td>
+            <td>Classifies every file into the four states above.</td>
+          </tr>
+          <tr>
+            <td><code>push</code></td>
+            <td class="text-warning font-semibold">writes</td>
+            <td>yes</td>
+            <td>POSTs new entries, PATCHes modified ones, deletes entries whose files are gone. Writes back ids and digests. The only command that mutates Google.</td>
+          </tr>
+          <tr>
+            <td><code>add</code></td>
+            <td class="text-warning font-semibold">writes</td>
+            <td>yes</td>
+            <td>Writes a file from command-line args, then pushes it. <code>--no-push</code> writes only.</td>
+          </tr>
+          <tr>
+            <td><code>tidy</code></td>
+            <td class="opacity-60">none</td>
+            <td>moves</td>
+            <td>Files every entry into the day folder its <code>start</code> names.</td>
+          </tr>
+          <tr>
+            <td><code>total</code></td>
+            <td class="opacity-60">none</td>
+            <td>no</td>
+            <td>Sums a day from local files only.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm opacity-60 mt-2"><code>push --dry-run</code> prints the exact payloads and sends nothing.</p>
+  </section>
+
+  <div class="rule my-10"></div>
+
+  <!-- ─────────── Where it goes wrong ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-4">The five ways this goes wrong</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="font-bold">Editing an anonymous entry</h3>
+            <span class="badge badge-sm badge-error badge-soft">common</span>
+          </div>
+          <p class="text-sm opacity-80">An entry without a <code>food_ref</code> is an anonymous food log, and
+            the API refuses to update those. <strong>16 of your 20 entries are anonymous.</strong>
+            <code>status</code> warns before you push; <code>push</code> reports the API's actual rejection and
+            tells you to delete and recreate instead.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="font-bold">Both sides changed</h3>
+          <p class="text-sm opacity-80"><code>pull</code> will not overwrite a file whose digest no longer
+            matches — it skips and says so. You choose: <code>push</code> to send yours, or
+            <code>pull --force</code> to discard yours and take the remote version.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="font-bold">Deleting by accident</h3>
+          <p class="text-sm opacity-80">A missing file is read as a deletion, so moving the folder or a
+            bad <code>rm</code> could wipe remote records. <code>push</code> therefore lists every entry it is
+            about to delete and waits for a <code>y</code>; with no terminal attached it refuses outright.
+            <code>--yes</code> overrides. Until you push, the deletion is local only and
+            <code>pull --force</code> restores the files.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="font-bold">A malformed file</h3>
+          <p class="text-sm opacity-80">Broken YAML or a missing required field is caught locally, listed as
+            <code>bad</code> with the reason, and skipped. One bad file never blocks the others.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="font-bold">A create that loses its id</h3>
+            <span class="badge badge-sm badge-warning badge-soft">guarded</span>
+          </div>
+          <p class="text-sm opacity-80">If the POST succeeds but the response carries no id, the entry exists
+            remotely and your file doesn't know it. Pushing again would duplicate it. The file is marked
+            <code>orphan</code> instead, <code>push</code> refuses to touch it, and <code>pull</code> matches it
+            on time, name and calories to recover the id.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── Verification note ─────────── -->
+  <section class="mb-9">
+    <div class="card card-border bg-base-100">
+      <div class="card-body gap-2">
+        <h3 class="eyebrow opacity-60">What's been exercised, and what hasn't</h3>
+        <p class="text-sm"><strong>Run against the real API:</strong> the 7-day pull and repeated pulls
+          (idempotent); a live create through <code>add</code>, whose id parsed on the first try; a live
+          delete, confirmed gone from the API and not resurrected by the next pull; the no-terminal refusal
+          and the <code>--yes</code> override; edit detection; new-file detection from any location; the
+          day-folder migration; <code>tidy</code>; and <code>total</code> cross-checked against the API's own
+          <code>daily-rollup</code>.</p>
+        <p class="text-sm"><strong>Still unexercised:</strong> a live <code>PATCH</code>. Updates have only
+          run under <code>--dry-run</code>, and 16 of the 22 entries are anonymous, which the API refuses to
+          update at all — so the update path's success case is untested. The orphan guard is likewise a
+          fallback that has only been triggered artificially.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

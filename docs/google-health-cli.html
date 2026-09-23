@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talking to Google Health from the CLI</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  pre code { white-space: pre; }
+  .cmd { background: var(--color-base-300); border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+         border-radius: .6rem; padding: .85rem 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.65; }
+  .cmd .c { color: color-mix(in oklch, var(--color-base-content) 45%, transparent); }
+  .cmd .k { color: var(--color-primary); }
+  .rule { height: 1px; background: color-mix(in oklch, var(--color-base-content) 12%, transparent); }
+  .eyebrow { letter-spacing: .14em; text-transform: uppercase; font-size: .68rem; font-weight: 600; }
+</style>
+</head>
+<body class="bg-base-200 text-base-content">
+<main class="mx-auto max-w-5xl p-5 lg:p-10">
+
+  <!-- ─────────── Header ─────────── -->
+  <header class="mb-10">
+    <p class="eyebrow text-primary mb-3">Research · 22 Sep 2026</p>
+    <h1 class="text-4xl lg:text-5xl font-bold leading-tight mb-4">Talking to Google Health from the command line</h1>
+    <p class="text-lg opacity-80 max-w-3xl">
+      "Google Health" is now three separate systems. Which CLI path you take depends entirely on
+      <strong>where your data physically lives</strong> — Google's cloud, or your phone.
+    </p>
+  </header>
+
+  <!-- ─────────── The headline answer ─────────── -->
+  <section class="card card-border bg-base-100 mb-10">
+    <div class="card-body">
+      <h2 class="card-title text-2xl">The short answer</h2>
+      <div class="grid gap-4 md:grid-cols-2 mt-2">
+        <div>
+          <p class="mb-3">There is an <strong>official CLI</strong>, published by Google, and it ships Agent Skills for
+            exactly this kind of setup:</p>
+          <div class="cmd"><code><span class="c"># Go toolchain required</span>
+git clone https://github.com/Google-Health-API/google-health-cli
+cd google-health-cli && go build -o ghealth .
+
+./ghealth setup                 <span class="c"># OAuth, once</span>
+./ghealth list steps --format table
+./ghealth daily-rollup sleep --days 7</code></div>
+        </div>
+        <div class="flex flex-col gap-3">
+          <div role="alert" class="alert alert-warning alert-soft">
+            <span><strong>But:</strong> the Google Health API only serves <strong>Fitbit and Pixel Watch</strong> data.
+              If your numbers come from a Pixel <em>phone</em> or a third-party app, this API cannot see them at all.</span>
+          </div>
+          <p class="text-sm opacity-75">For phone-side data the only route is Health Connect's own export —
+            which happily turns out to be a plain, <strong>unencrypted SQLite file</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── Diagram ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-1">Where your data lives decides your path</h2>
+    <p class="opacity-75 mb-5 max-w-3xl">Google split the old Google Fit brand in two: a cloud API for wearables,
+      and an on-device store for everything else. There is no bridge between them from the CLI.</p>
+
+    <div class="card card-border bg-base-100">
+      <div class="card-body">
+        <svg viewBox="0 0 900 400" role="img" aria-labelledby="fig-title" style="width:100%">
+          <title id="fig-title">Two independent paths: cloud wearable data via the Google Health API, and on-device data via Health Connect export</title>
+          <defs>
+            <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g fill="none" stroke="currentColor" opacity="0.95">
+
+            <!-- Column headers -->
+            <text x="150" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor" stroke="none" opacity=".55">SOURCE</text>
+            <text x="450" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor" stroke="none" opacity=".55">WHERE IT SITS</text>
+            <text x="770" y="28" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor" stroke="none" opacity=".55">CLI ACCESS</text>
+
+            <!-- ── Cloud lane ── -->
+            <g id="lane-cloud">
+              <title>Cloud lane: Fitbit and Pixel Watch data reachable over HTTP</title>
+              <rect x="30" y="60" width="240" height="66" rx="10" stroke-width="1.5" opacity=".6"/>
+              <text x="150" y="88" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor" stroke="none">Fitbit device</text>
+              <text x="150" y="110" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor" stroke="none">Pixel Watch</text>
+
+              <path d="M280,93 L330,93" stroke-width="2" marker-end="url(#arw)"/>
+
+              <rect x="340" y="52" width="220" height="82" rx="10" stroke-width="2.5"/>
+              <text x="450" y="82" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor" stroke="none">Google cloud</text>
+              <text x="450" y="104" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">tied to your Google Account</text>
+              <text x="450" y="122" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">syncs automatically</text>
+
+              <path d="M570,93 L620,93" stroke-width="2" marker-end="url(#arw)"/>
+
+              <rect x="630" y="52" width="245" height="82" rx="10" stroke-width="2.5"/>
+              <text x="752" y="80" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor" stroke="none">Google Health API v4</text>
+              <text x="752" y="101" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">ghealth · curl · MCP</text>
+              <text x="752" y="121" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">works from any machine</text>
+            </g>
+
+            <!-- Divider -->
+            <path d="M30,175 L875,175" stroke-width="1" stroke-dasharray="5 6" opacity=".3"/>
+            <text x="452" y="170" text-anchor="middle" font-size="11.5" fill="currentColor" stroke="none" opacity=".45">no bridge between these two</text>
+
+            <!-- ── Device lane ── -->
+            <g id="lane-device">
+              <title>Device lane: phone and app data only reachable on the Android device itself</title>
+              <rect x="30" y="205" width="240" height="94" rx="10" stroke-width="1.5" opacity=".6"/>
+              <text x="150" y="234" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor" stroke="none">Pixel phone sensors</text>
+              <text x="150" y="257" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor" stroke="none">Samsung Health</text>
+              <text x="150" y="280" text-anchor="middle" font-size="15" font-weight="600" fill="currentColor" stroke="none">Strava, Oura, …</text>
+
+              <path d="M280,252 L330,252" stroke-width="2" marker-end="url(#arw)"/>
+
+              <rect x="340" y="211" width="220" height="82" rx="10" stroke-width="2.5"/>
+              <text x="450" y="241" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor" stroke="none">Health Connect</text>
+              <text x="450" y="263" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">on-device only</text>
+              <text x="450" y="281" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">no REST API, ever</text>
+
+              <path d="M570,252 L620,252" stroke-width="2" marker-end="url(#arw)"/>
+
+              <rect x="630" y="211" width="245" height="82" rx="10" stroke-width="2.5"/>
+              <text x="752" y="239" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor" stroke="none">Export → SQLite</text>
+              <text x="752" y="260" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">unencrypted .db in a zip</text>
+              <text x="752" y="280" text-anchor="middle" font-size="12.5" fill="currentColor" stroke="none" opacity=".72">sqlite3 · datasette · Termux</text>
+            </g>
+
+            <!-- ── Dead ends ── -->
+            <g id="lane-dead" opacity=".45">
+              <title>Retired: Google Fit APIs and the legacy Fitbit Web API</title>
+              <rect x="30" y="335" width="845" height="48" rx="10" stroke-width="1.5" stroke-dasharray="6 5"/>
+              <text x="452" y="358" text-anchor="middle" font-size="13.5" font-weight="600" fill="currentColor" stroke="none">RETIRED — do not build on these</text>
+              <text x="452" y="375" text-anchor="middle" font-size="12" fill="currentColor" stroke="none">Google Fit REST / Sensor / Recording APIs · legacy Fitbit Web API (off 30 Sep 2026)</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <div class="rule my-10"></div>
+
+  <!-- ─────────── Route 1 ─────────── -->
+  <section class="mb-8">
+    <div class="flex flex-wrap items-center gap-3 mb-2">
+      <h2 class="text-2xl font-bold">Route 1 — <code class="text-primary">ghealth</code>, the official CLI</h2>
+      <span class="badge badge-success badge-soft">Recommended</span>
+      <span class="badge badge-ghost">Apache 2.0</span>
+    </div>
+    <p class="opacity-80 mb-4 max-w-3xl">Google published a first-party Go CLI for the Health API in mid-2026.
+      It covers 40 data types, handles OAuth and token refresh for you, and — relevant to you specifically —
+      ships two <strong>Agent Skills</strong> (SKILL.md files) so Claude Code can drive it directly.</p>
+
+    <div class="grid gap-5 lg:grid-cols-5">
+      <div class="lg:col-span-3">
+        <div class="cmd"><code><span class="c"># 1. build</span>
+git clone https://github.com/Google-Health-API/google-health-cli
+cd google-health-cli && go build -o ghealth .
+
+<span class="c"># 2. one-time OAuth (writes ~/.config/ghealth/)</span>
+./ghealth setup
+
+<span class="c"># 3. read</span>
+./ghealth types                          <span class="c"># discover all 40 types</span>
+./ghealth list steps --format table
+./ghealth list heart-rate --format csv > hr.csv
+./ghealth daily-rollup sleep
+./ghealth identity
+./ghealth paired-devices
+
+<span class="c"># headless / another machine</span>
+./ghealth setup --non-interactive
+GHEALTH_ACCESS_TOKEN=... ./ghealth list weight --raw</code></div>
+      </div>
+      <div class="lg:col-span-2 flex flex-col gap-3">
+        <div class="card card-border bg-base-100">
+          <div class="card-body p-4 gap-2">
+            <h3 class="font-semibold text-sm eyebrow opacity-60">Commands</h3>
+            <p class="text-sm">list · get · create · update · delete · rollup · daily-rollup · reconcile · export-tcx · types · scopes · identity · profile · webhooks</p>
+          </div>
+        </div>
+        <div class="card card-border bg-base-100">
+          <div class="card-body p-4 gap-2">
+            <h3 class="font-semibold text-sm eyebrow opacity-60">Output</h3>
+            <p class="text-sm">Simplified JSON by default; <code>--format table</code>, <code>--format csv</code>,
+              <code>--raw</code> for untouched API responses. <code>--dry-run</code> prints the request.</p>
+          </div>
+        </div>
+        <div class="card card-border bg-base-100">
+          <div class="card-body p-4 gap-2">
+            <h3 class="font-semibold text-sm eyebrow opacity-60">Maturity</h3>
+            <p class="text-sm">Early — ~256 stars, 7 commits on main. Official org, but young.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── Route 2 ─────────── -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold mb-2">Route 2 — raw <code class="text-primary">curl</code></h2>
+    <p class="opacity-80 mb-4 max-w-3xl">Same API, no dependencies. Worth knowing even if you use the CLI, because
+      the OAuth dance is where every setup actually gets stuck.</p>
+    <div class="cmd"><code><span class="c"># a) consent URL — open in a browser, copy the ?code= from the redirect</span>
+https://accounts.google.com/o/oauth2/v2/auth
+  ?client_id=<span class="k">$CLIENT_ID</span>
+  &redirect_uri=https://www.google.com
+  &response_type=code
+  &access_type=offline
+  &scope=https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly
+
+<span class="c"># b) code → tokens</span>
+curl -X POST https://oauth2.googleapis.com/token \
+  -d "code=<span class="k">$CODE</span>&client_id=<span class="k">$CLIENT_ID</span>&client_secret=<span class="k">$SECRET</span>" \
+  -d "redirect_uri=https://www.google.com&grant_type=authorization_code"
+
+<span class="c"># c) refresh later (access tokens last ~1h)</span>
+curl -X POST https://oauth2.googleapis.com/token \
+  -d "client_id=<span class="k">$CLIENT_ID</span>&client_secret=<span class="k">$SECRET</span>" \
+  -d "refresh_token=<span class="k">$REFRESH</span>&grant_type=refresh_token"
+
+<span class="c"># d) read</span>
+curl -H "Authorization: Bearer <span class="k">$TOKEN</span>" \
+  'https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints?page_size=10'
+
+curl -H "Authorization: Bearer <span class="k">$TOKEN</span>" \
+  'https://health.googleapis.com/v4/users/me/dataTypes/exercise/dataPoints?filter=exercise.interval.civil_start_time%20>=%20"2026-09-01T00:00:00"'</code></div>
+
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100 mt-5">
+      <table class="table table-zebra table-sm">
+        <thead><tr><th>Endpoint</th><th>Method</th><th>What it gives you</th></tr></thead>
+        <tbody>
+          <tr><td><code>/users/me/identity</code></td><td>GET</td><td>Google + legacy Fitbit user IDs</td></tr>
+          <tr><td><code>/users/me/dataTypes/{type}/dataPoints</code></td><td>GET</td><td>Raw / intraday points, paginated</td></tr>
+          <tr><td><code>…/dataPoints:reconcile</code></td><td>GET</td><td>Deduped stream across overlapping sources</td></tr>
+          <tr><td><code>…/dataPoints:rollUp</code></td><td>POST</td><td>Aggregate over an arbitrary time window</td></tr>
+          <tr><td><code>…/dataPoints:dailyRollUp</code></td><td>POST</td><td>Per-day aggregates in civil time</td></tr>
+          <tr><td><code>…/dataPoints</code> / <code>:batchDelete</code></td><td>POST</td><td>Write and delete (nutrition, hydration, weight…)</td></tr>
+          <tr><td><code>/users/me/pairedDevices</code></td><td>GET</td><td>Devices + last sync time</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm opacity-60 mt-2">Base URL <code>https://health.googleapis.com/v4</code>. Data type names are
+      kebab-case in paths (<code>body-fat</code>) but snake_case inside filters (<code>body_fat</code>) — an easy hour to lose.</p>
+  </section>
+
+  <!-- ─────────── Route 3 ─────────── -->
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold mb-2">Route 3 — MCP, if you want Claude to read it rather than you</h2>
+    <p class="opacity-80 mb-4 max-w-3xl">Several community MCP servers wrap the same v4 API. They run locally;
+      tokens stay on your machine and the only outbound calls go to Google. All are read-only and all are beta,
+      because the API surface is still moving.</p>
+    <div class="grid gap-4 md:grid-cols-3">
+      <div class="card card-border bg-base-100"><div class="card-body p-4 gap-1">
+        <h3 class="font-semibold">BerkKilicoglu/<wbr>google-health-fitbit-mcp</h3>
+        <p class="text-sm opacity-75">Read-only, one-command install, explicitly local-first. The broadest metric coverage of the three.</p>
+      </div></div>
+      <div class="card card-border bg-base-100"><div class="card-body p-4 gap-1">
+        <h3 class="font-semibold">jorgeschnura/<wbr>google-health-mcp</h3>
+        <p class="text-sm opacity-75">Adds a computed recovery / readiness score on top of the raw reads.</p>
+      </div></div>
+      <div class="card card-border bg-base-100"><div class="card-body p-4 gap-1">
+        <h3 class="font-semibold">davidmosiah/<wbr>google-health-mcp</h3>
+        <p class="text-sm opacity-75">Local-first v4 server targeting Claude Code / Cursor.</p>
+      </div></div>
+    </div>
+    <p class="text-sm opacity-60 mt-3">Note: <code>ghealth</code> ships Agent Skills instead of an MCP server — for Claude Code
+      that is arguably the better fit, since you get the CLI for scripting and the skill for conversation from one install.</p>
+  </section>
+
+  <!-- ─────────── Route 4 ─────────── -->
+  <section class="mb-8">
+    <div class="flex flex-wrap items-center gap-3 mb-2">
+      <h2 class="text-2xl font-bold">Route 4 — Health Connect export → SQLite</h2>
+      <span class="badge badge-info badge-soft">Only path for phone-side data</span>
+    </div>
+    <p class="opacity-80 mb-4 max-w-3xl">Health Connect has no REST API and never will — it is deliberately on-device.
+      But its backup/export feature writes a <strong>plain unencrypted SQLite database inside a zip</strong>,
+      and it can be scheduled daily. That makes it a perfectly good CLI data source.</p>
+
+    <div class="grid gap-5 lg:grid-cols-2">
+      <div>
+        <h3 class="eyebrow opacity-60 mb-2">On the phone, once</h3>
+        <p class="text-sm mb-3 opacity-80">Health Connect → Backup &amp; restore → schedule export (daily / weekly / monthly)
+          to a cloud folder. Produces <code>Health Connect.zip</code>.</p>
+        <h3 class="eyebrow opacity-60 mb-2">Then, from anywhere</h3>
+        <div class="cmd"><code>unzip "Health Connect.zip"
+sqlite3 health_connect_export.db ".tables"
+
+sqlite3 health_connect_export.db \
+  "SELECT * FROM steps_record_table LIMIT 5;"
+
+<span class="c"># or browse it properly</span>
+datasette health_connect_export.db</code></div>
+      </div>
+      <div>
+        <h3 class="eyebrow opacity-60 mb-2">Straight off the device — fits your Termux setup</h3>
+        <p class="text-sm mb-3 opacity-80">You already run Termux on the Pixel with adb forwarding. Termux has
+          <code>sqlite3</code> and <code>pkg install android-tools</code>, so the whole loop can stay on-phone —
+          no desktop in the path.</p>
+        <div class="cmd"><code><span class="c"># pull the scheduled export off the device</span>
+adb pull /sdcard/Download/"Health Connect.zip" .
+
+<span class="c"># or, entirely inside Termux</span>
+pkg install sqlite unzip
+cd ~/storage/downloads && unzip -o "Health Connect.zip"
+sqlite3 *.db "SELECT COUNT(*) FROM steps_record_table;"</code></div>
+        <p class="text-sm opacity-60 mt-3">Community tooling worth a look if you want this automated rather than manual:
+          <code>kas-cor/healthconnect-export</code> (daily JSON + Drive sync),
+          <code>angeloanan/HealthConnectExports</code>,
+          <code>alexandershalin/health-connect-gate</code> (pushes to your own HTTPS endpoint).</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="rule my-10"></div>
+
+  <!-- ─────────── Comparison ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-4">Side by side</h2>
+    <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100">
+      <table class="table table-zebra">
+        <thead>
+          <tr>
+            <th>Route</th><th>Covers</th><th>Setup cost</th><th>Automatable</th><th>Catch</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>ghealth CLI</strong></td>
+            <td>Fitbit + Pixel Watch, 40 types</td>
+            <td>Go build + GCP project + OAuth</td>
+            <td class="text-success font-semibold">Yes</td>
+            <td>Young project; API still shifting</td>
+          </tr>
+          <tr>
+            <td><strong>curl / v4 REST</strong></td>
+            <td>Same as above</td>
+            <td>GCP project + OAuth by hand</td>
+            <td class="text-success font-semibold">Yes</td>
+            <td>You own token refresh</td>
+          </tr>
+          <tr>
+            <td><strong>MCP server</strong></td>
+            <td>Same as above, read-only</td>
+            <td>npm/uvx install + OAuth</td>
+            <td class="opacity-60">Conversational, not scriptable</td>
+            <td>All beta</td>
+          </tr>
+          <tr>
+            <td><strong>Health Connect export</strong></td>
+            <td>Phone sensors + every connected app</td>
+            <td>Two taps on the phone</td>
+            <td class="text-warning font-semibold">Semi — scheduled, then pull</td>
+            <td>Not live; batch only</td>
+          </tr>
+          <tr class="opacity-45">
+            <td><s>Google Fit REST</s></td>
+            <td>—</td><td>—</td><td>—</td>
+            <td>Closed to new signups May 2024; off end of 2026</td>
+          </tr>
+          <tr class="opacity-45">
+            <td><s>Fitbit Web API</s></td>
+            <td>—</td><td>—</td><td>—</td>
+            <td><strong>Turns down 30 Sep 2026 — 8 days away</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─────────── Gotchas ─────────── -->
+  <section class="mb-10">
+    <h2 class="text-2xl font-bold mb-4">Four things that will bite you</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div role="alert" class="alert alert-error alert-soft items-start">
+        <span><strong>Refresh tokens expire in 7 days</strong> while your OAuth consent screen is in
+          <em>Testing</em> status. For a personal cron job this is the single biggest annoyance — you re-consent weekly
+          unless you push the project to <em>In Production</em>, where refresh tokens last until revoked or ~6 months idle.</span>
+      </div>
+      <div role="alert" class="alert alert-warning alert-soft items-start">
+        <span><strong>All Health scopes are "Restricted."</strong> Fine for you alone — add your own email to the
+          test-user list, cap is 100 users. Going past that needs a third-party security review.</span>
+      </div>
+      <div role="alert" class="alert alert-warning alert-soft items-start">
+        <span><strong>No Fitbit or Pixel Watch means no data.</strong> The v4 API is the Fitbit cloud with a new name.
+          A Pixel phone alone gives you an empty API and a full Health Connect database.</span>
+      </div>
+      <div role="alert" class="alert alert-info alert-soft items-start">
+        <span><strong>Old OAuth tokens don't carry over</strong> from the Fitbit Web API. Anything you built against
+          Fitbit needs a fresh Google consent — and after 30 Sep the old endpoints simply stop.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── Recommendation ─────────── -->
+  <section class="card bg-primary text-primary-content mb-10">
+    <div class="card-body">
+      <h2 class="card-title text-2xl">What I'd actually do</h2>
+      <ol class="list-decimal ml-5 space-y-2 mt-1">
+        <li><strong>If you own a Fitbit or Pixel Watch:</strong> build <code>ghealth</code>, run <code>ghealth setup</code>,
+          and immediately publish the OAuth consent screen to <em>In Production</em> so refresh tokens stop expiring weekly.
+          Its Agent Skills then give Claude Code direct access with no MCP server needed.</li>
+        <li><strong>If your data is phone-side only:</strong> skip the API entirely. Turn on the scheduled
+          Health Connect export and point <code>sqlite3</code> or <code>datasette</code> at the zip — you already have
+          Termux and adb wired up on the Pixel, so this needs no new infrastructure.</li>
+        <li><strong>Either way, don't touch Google Fit or the Fitbit Web API.</strong> One is closed to new signups,
+          the other dies in eight days.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ─────────── Sources ─────────── -->
+  <section>
+    <h2 class="text-xl font-bold mb-3">Sources</h2>
+    <ul class="grid gap-x-8 gap-y-1 md:grid-cols-2 text-sm opacity-80 list-disc ml-5">
+      <li><a class="link" href="https://github.com/Google-Health-API/google-health-cli">Google-Health-API/google-health-cli</a></li>
+      <li><a class="link" href="https://developers.google.com/health/about">About the Google Health API</a></li>
+      <li><a class="link" href="https://developers.google.com/health/endpoints">Google Health API — Endpoints</a></li>
+      <li><a class="link" href="https://developers.google.com/health/setup">Set up Google Cloud and OAuth</a></li>
+      <li><a class="link" href="https://developers.google.com/health/codelabs/make-your-first-api-call">Make your first API call (codelab)</a></li>
+      <li><a class="link" href="https://support.google.com/android/answer/15323271?hl=en">Back up &amp; restore Health Connect data</a></li>
+      <li><a class="link" href="https://nelsonslog.wordpress.com/2025/10/28/getting-data-from-google-fit-and-health-connect/">Nelson's log — reading the Health Connect export</a></li>
+      <li><a class="link" href="https://developer.android.com/health-and-fitness/health-connect/migration/fit">Android — Fit migration guide</a></li>
+      <li><a class="link" href="https://sahha.ai/blog/fitbit-api-sunset-migration/">Sahha — Fitbit Web API shutdown</a></li>
+      <li><a class="link" href="https://sahha.ai/blog/google-fit-api-sunset-migration/">Sahha — Google Fit API sunset</a></li>
+      <li><a class="link" href="https://github.com/BerkKilicoglu/google-health-fitbit-mcp">google-health-fitbit-mcp</a></li>
+      <li><a class="link" href="https://github.com/kas-cor/healthconnect-export">healthconnect-export</a></li>
+    </ul>
+  </section>
+
+</main>
+</body>
+</html>
