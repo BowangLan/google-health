@@ -260,6 +260,25 @@ sync:
 Notes go here.
 ```
 
+**Every number is a total for the portion you ate, not a per-unit rate.** That
+holds for `kcal`, `carbs_g`, `fat_g` and everything under `nutrients`.
+`serving` is a label describing the portion — it never scales anything:
+
+```sh
+./fsync add snack "Sun cake" 400 -a 2 -u piece   # 400 total, for both pieces
+./fsync add snack "Sun cake" 200 -a 2 -u piece   # claims 200 total — wrong
+```
+
+Confirmed against the API: Google's `daily-rollup` equals a plain sum of the
+`kcal` fields (3100 / 2437 / 1485 across three days here), with no multiplying
+by `amount`. And an identified entry's macros match its catalog food's
+reference quantity exactly — 8 cookies reading 160 kcal, not 160 per cookie.
+
+`protein` lives under `nutrients` rather than beside `carbs_g` and `fat_g`
+because that is how the API shapes it: `energy`, `totalCarbohydrate` and
+`totalFat` are named top-level fields, while protein shares the generic
+`nutrients` array with sodium, sugar, fibre, saturated fat and the rest.
+
 ### Creating an entry
 
 Write a file with no `id` and push it. Only `meal`, `name`, `start` and `kcal`
