@@ -95,6 +95,7 @@ Every food entry is one Markdown file in `food/`, with YAML frontmatter holding
 the data and the body free for notes that never leave this machine.
 
 ```sh
+./fsync sync               # diff both sides, then choose
 ./fsync pull --days 7      # fetch remote entries into ./food/
 ./fsync status             # what is new, changed, or in sync
 ./fsync push --dry-run     # show what would be sent
@@ -103,6 +104,61 @@ the data and the body free for notes that never leave this machine.
 ./fsync total yesterday    # calories for a day, from local files
 ./fsync config             # where every path resolved to, and why
 ```
+
+### `sync` — see the difference first, then choose
+
+`pull` and `push` each act immediately in one direction. `sync` shows you both
+sides first and asks:
+
+```
+range 2026-09-21 .. 2026-09-23  (3 days, from the oldest day folder)
+   *  2026-09-23/0900--venti-iced-matcha-latte--…md  edited here; push replaces it
+   >  2026-09-22 Chicken Egg Sandwich  450 kcal · only in Google Health
+   <  2026-09-23/new-thing.md  new here; never pushed
+   !  2026-09-22/0800--ube-donut--…md  changed on BOTH sides
+         kcal: 285  (here)  vs  280  (remote)
+   x  2026-09-21/1953--oatmeal--…md  gone from Google Health
+   -  2026-09-22/1815--egg-tart--…md  deleted here; push removes it
+
+  1 day folder(s) to create: 2026-09-22
+
+diff 11 to pull, 2 to push, 1 conflicted
+
+  1  pull   11 from Google Health
+  2  push   2 from here
+  3  both
+  n  nothing
+
+  ? which? [1/2/3/n]
+```
+
+| | |
+| --- | --- |
+| `>` | only in Google Health, or changed there — `pull` brings it here |
+| `<` | new here, never pushed |
+| `*` | edited here; `push` replaces it (new id) |
+| `!` | **both sides changed since the last sync** — neither direction is safe |
+| `x` | in range, but Google Health no longer has it |
+| `-` | file deleted here; `push` removes it remotely |
+
+**The range is the oldest day folder through today**, not a `--days` count —
+so it covers everything you have on disk. Folders whose names aren't
+`YYYY-MM-DD` are ignored rather than fatal, so a stray folder can't silently
+widen it. With no day folders at all, the range is just today.
+
+Remote days you have no folder for are created as the entries are written;
+`sync` names them before you decide.
+
+Only `1`/`2`/`3` act. Anything else, including Ctrl-D, does nothing. `--pull`
+and `--push` skip the prompt for scripts — without a terminal and without
+those flags, `sync` prints the diff and stops. **Pull runs before push**, which
+is deliberate: `pull` refuses to overwrite a file you have edited, so your
+pending changes survive it and go out on the push.
+
+Two things `sync` reports but will not act on. A **conflict** (`!`) is left
+alone entirely — pushing loses their version, `pull --force` loses yours, so it
+shows the differing fields and lets you decide. And `x` is informational:
+detecting remote deletions is new to `sync`, and `status` still can't see them.
 
 ### Layout
 

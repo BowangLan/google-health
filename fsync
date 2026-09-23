@@ -11,6 +11,7 @@ is the data, the body is free-form notes that never leave this machine.
 
     fsync add lunch "Burrito" 650 -p 38
                             create an entry as a file and push it
+    fsync sync              diff both sides, then choose what to do
     fsync pull --days 7     fetch remote entries into ./food/
     fsync status            what is new, changed, or in sync
     fsync push              create new entries, update changed ones
@@ -522,21 +523,45 @@ def is_dirty(fm: dict) -> bool:
 
 # ── commands ──────────────────────────────────────────────────────────────
 
-def cmd_pull(args) -> int:
-    since = (dt.date.today() - dt.timedelta(days=args.days - 1)).isoformat()
+def fetch_remote(since: str, limit: int, quiet: bool = False) -> list[dict]:
+    """Read entries from `since` to today via ghealth. Reads only, never writes."""
     cmd = [str(GHEALTH), "data", "nutrition-log", "list",
-           "--from", since, "--to", "today", "--raw", "--limit", str(args.limit)]
-    print(dim(f"$ {' '.join(cmd)}"))
+           "--from", since, "--to", "today", "--raw", "--limit", str(limit)]
+    if not quiet:
+        print(dim(f"$ {' '.join(cmd)}"))
     out = subprocess.run(cmd, capture_output=True, text=True)
     if out.returncode != 0:
-        die(f"pull failed: {out.stderr.strip() or out.stdout.strip()}")
+        die(f"fetch failed: {out.stderr.strip() or out.stdout.strip()}")
     try:
         payload = json.loads(out.stdout)
     except json.JSONDecodeError:
         die(f"unexpected response: {out.stdout[:300]}")
-    points = payload.get("dataPoints", [])
     if payload.get("nextPageToken"):
-        print(yellow(f"  note: more pages exist; raise --limit above {args.limit}"))
+        print(yellow(f"  note: more pages exist; raise --limit above {limit}"))
+    return payload.get("dataPoints", [])
+
+
+def earliest_day() -> dt.date:
+    """The oldest day folder on disk — the far end of the sync range.
+
+    Day folders are named YYYY-MM-DD. Anything that does not parse is ignored
+    rather than fatal, so a stray folder cannot widen the range by accident.
+    """
+    days = []
+    if FOOD_DIR.is_dir():
+        for child in FOOD_DIR.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                days.append(dt.date.fromisoformat(child.name))
+            except ValueError:
+                continue
+    return min(days) if days else dt.date.today()
+
+
+def cmd_pull(args) -> int:
+    since = (dt.date.today() - dt.timedelta(days=args.days - 1)).isoformat()
+    points = fetch_remote(since, args.limit)
 
     by_id, _, orphans, _ = scan()
     created = updated = skipped = unchanged = adopted = 0
@@ -917,6 +942,178 @@ def cmd_add(args) -> int:
     return 0 if good else 1
 
 
+def field_diff(local: dict, remote: dict) -> list[tuple[str, Any, Any]]:
+    """Owned fields that differ, normalised the same way the digest is."""
+    out = []
+    for key in OWNED:
+        a, b = tidy_numbers(local.get(key)), tidy_numbers(remote.get(key))
+        if a != b:
+            out.append((key, a, b))
+    return out
+
+
+def sync_diff(points: list[dict], by_id: dict, since: dt.date,
+              doomed: dict) -> dict:
+    """Compare both sides. Reads nothing from disk and writes nothing.
+
+    `doomed` ids are entries whose file you deleted. They are absent locally
+    and present remotely, which is also what a never-pulled entry looks like —
+    the index is the only thing that tells them apart. They belong to the
+    delete list, not the pull list, and pull holds them rather than restoring.
+    """
+    remote_only, remote_changed, conflicts = [], [], []
+    seen: set[str] = set()
+    today = dt.date.today()
+
+    for dp in points:
+        fm_r = remote_to_fm(dp)
+        eid = fm_r["id"]
+        seen.add(eid)
+        local = by_id.get(eid)
+        if local is None:
+            if eid not in doomed:
+                remote_only.append(fm_r)
+            continue
+        path, fm_l, _ = local
+        if digest(fm_l) == digest(fm_r):
+            continue
+        stored = (fm_l.get("sync") or {}).get("digest")
+        if is_dirty(fm_l):
+            # Both sides moved since the last sync: pushing loses theirs,
+            # pulling --force loses yours. Say so instead of picking.
+            if stored != digest(fm_r):
+                conflicts.append((path, fm_l, fm_r))
+        else:
+            remote_changed.append((path, fm_l, fm_r))
+
+    # A local entry dated inside the window that the remote did not return has
+    # been deleted in the app. Outside the window it is merely not fetched.
+    vanished = []
+    for eid, (path, fm, _) in by_id.items():
+        if eid in seen:
+            continue
+        try:
+            day = dt.date.fromisoformat(day_of(fm))
+        except Exception:
+            continue
+        if since <= day <= today:
+            vanished.append((path, fm))
+
+    return {"remote_only": remote_only, "remote_changed": remote_changed,
+            "conflicts": conflicts, "vanished": vanished}
+
+
+def show_sync_diff(d: dict, new: list, orphans: list, doomed: dict) -> None:
+    def line(mark, text, note=""):
+        print(f"  {mark}  {text}{('  ' + dim(note)) if note else ''}")
+
+    for fm in d["remote_only"]:
+        line(green(" >"), f"{day_of(fm)} {fm['name']}",
+             f"{int(fm.get('kcal') or 0)} kcal · only in Google Health")
+    for path, fm_l, fm_r in d["remote_changed"]:
+        line(green(" >"), rel(path), "changed in Google Health")
+        for key, mine, theirs in field_diff(fm_l, fm_r):
+            print(dim(f"         {key}: {mine}  ->  {theirs}"))
+    for path, fm, _ in new:
+        line(yellow(" <"), rel(path), "new here; never pushed")
+    for path, fm, _ in orphans:
+        line(yellow(" ?"), rel(path), "created remotely, id unknown")
+    for path, fm_l, fm_r in d["conflicts"]:
+        line(red(" !"), rel(path), "changed on BOTH sides")
+        for key, mine, theirs in field_diff(fm_l, fm_r):
+            print(dim(f"         {key}: {mine}  (here)  vs  {theirs}  (remote)"))
+    for path, fm in d["vanished"]:
+        line(red(" x"), rel(path), "gone from Google Health")
+    for eid, meta in doomed.items():
+        line(red(" -"), str(meta.get("path", eid)), "deleted here; push removes it")
+
+
+def cmd_sync(args) -> int:
+    since = earliest_day()
+    today = dt.date.today()
+    span = (today - since).days + 1
+    print(dim(f"range {since} .. {today}  ({span} day{'s' if span != 1 else ''}, "
+              f"from the oldest day folder)"))
+
+    points = fetch_remote(since.isoformat(), args.limit)
+    by_id, new, orphans, broken = scan()
+    for path, err in broken:
+        print(f"  {red('bad ')}  {rel(path)}: {err}")
+
+    doomed = pending_deletes(by_id)
+    d = sync_diff(points, by_id, since, doomed)
+    conflicted = {str(p) for p, _, _ in d["conflicts"]}
+    edited = [(p, fm) for p, fm, _ in by_id.values()
+              if is_dirty(fm) and str(p) not in conflicted]
+
+    for path, fm in edited:
+        print(f"  {yellow(' *')}  {rel(path)}  {dim('edited here; push replaces it')}")
+    show_sync_diff(d, new, orphans, doomed)
+
+    # Days the remote has data for that have no folder yet. pull creates them
+    # as it writes; this just says so up front.
+    missing = sorted({day_of(fm) for fm in d["remote_only"]}
+                     - {c.name for c in FOOD_DIR.iterdir() if c.is_dir()}
+                     if FOOD_DIR.is_dir() else set())
+    if missing:
+        print()
+        print(dim(f"  {len(missing)} day folder(s) to create: {', '.join(missing)}"))
+
+    n_pull = len(d["remote_only"]) + len(d["remote_changed"])
+    n_push = len(new) + len(edited)
+    print()
+    if not (n_pull or n_push or d["conflicts"] or d["vanished"] or doomed):
+        print(f"{bold('in sync')} — {len(points)} remote, {len(by_id)} local")
+        return 0
+
+    print(f"{bold('diff')} {n_pull} to pull, {n_push} to push"
+          + (f", {len(d['conflicts'])} conflicted" if d["conflicts"] else "")
+          + (f", {len(d['vanished'])} gone remotely" if d["vanished"] else "")
+          + (f", {len(doomed)} to delete" if doomed else ""))
+
+    choice = ("both" if args.pull and args.push
+              else "pull" if args.pull else "push" if args.push else None)
+    if choice is None:
+        if not sys.stdin.isatty():
+            print(dim("\n  not a terminal; pass --pull and/or --push to act"))
+            return 0
+        print()
+        keys = []
+        if n_pull:
+            print(f"  {bold('1')}  pull   {n_pull} from Google Health")
+            keys.append("1")
+        if n_push or doomed:
+            print(f"  {bold('2')}  push   {n_push} from here"
+                  + (f", delete {len(doomed)} remotely" if doomed else ""))
+            keys.append("2")
+        if len(keys) == 2:
+            print(f"  {bold('3')}  both")
+            keys.append("3")
+        print(f"  {bold('n')}  nothing")
+        print()
+        try:
+            reply = input(f"  {yellow('?')} which? [{'/'.join(keys)}/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            reply = ""                       # Ctrl-D or Ctrl-C means no
+            print()
+        choice = {"1": "pull", "2": "push", "3": "both"}.get(reply)
+        if choice is None or reply not in keys:
+            print(dim("  nothing done"))
+            return 0
+
+    rc = 0
+    # Pull first: it refuses to overwrite files you have edited, so the local
+    # changes queued for the push survive it.
+    if choice in ("pull", "both") and n_pull:
+        print()
+        rc |= cmd_pull(argparse.Namespace(days=span, limit=args.limit,
+                                          force=False))
+    if choice in ("push", "both") and (n_push or doomed):
+        print()
+        rc |= cmd_push(argparse.Namespace(dry_run=False, yes=args.yes))
+    return rc
+
+
 def cmd_tidy(args) -> int:
     """File every entry into its day folder. Local only; touches no network."""
     by_id, new, orphans, broken = scan()
@@ -1045,6 +1242,15 @@ def main() -> int:
     sp.add_argument("date", nargs="?", default="today",
                     help="today | yesterday | YYYY-MM-DD")
     sp.set_defaults(fn=cmd_total)
+
+    sp = sub.add_parser("sync", help="diff local against remote, then choose",
+                        parents=[common])
+    sp.add_argument("--limit", type=int, default=500)
+    sp.add_argument("--pull", action="store_true", help="skip the prompt, pull")
+    sp.add_argument("--push", action="store_true", help="skip the prompt, push")
+    sp.add_argument("-y", "--yes", action="store_true",
+                    help="skip the delete confirmation during push")
+    sp.set_defaults(fn=cmd_sync)
 
     sp = sub.add_parser("config", help="show resolved paths and their source",
                         parents=[common])
