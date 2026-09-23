@@ -27,8 +27,9 @@ $FSYNC_FOOD_DIR, or a food_dir entry in fsync.toml.
 The filename is a human convenience — date, name and id — and is never parsed.
 Everything is read from the file's own frontmatter.
 
-Anonymous entries (no `food_ref`) cannot be updated by the API, only created
-and deleted. push reports that per file rather than failing silently.
+The v4 API has no working update for nutrition-log, so editing a file and
+pushing it replaces the remote entry: create the new version, then delete the
+old one. The entry comes back with a new id and the file is renamed to match.
 """
 
 from __future__ import annotations
@@ -620,7 +621,7 @@ def cmd_status(args) -> int:
     for path, fm, _ in new:
         print(f"  {green(' new')}  {rel(path)}  {dim('-> will be created')}")
     for path, fm in dirty:
-        why = "" if fm.get("food_ref") else dim("  (anonymous: API may reject the update)")
+        why = dim("  -> replaced remotely; gets a new id")
         print(f"  {yellow('edit')}  {rel(path)}{why}")
 
     for path, fm, _ in orphans:
@@ -675,6 +676,67 @@ def confirm_deletes(doomed: dict[str, dict], assume_yes: bool) -> bool:
     return reply.strip().lower().startswith("y")
 
 
+def replace_entry(path: Path, fm: dict, body: str, token: str) -> bool:
+    """Apply an edit by replacing the remote entry, because PATCH does not work.
+
+    The v4 API has no working update for nutrition-log. An anonymous entry
+    (no food_ref) answers PATCH with 500 INTERNAL even when nothing changed;
+    an identified one answers 400. Google's own CLI registers no `update`
+    operation for this data type either. So an edit becomes create-then-delete,
+    and the entry comes back with a new id.
+
+    Create first, delete second. If the create fails nothing has changed and
+    the entry is still there; deleting first would lose it outright when the
+    create then failed.
+    """
+    old_id = str(fm["id"])
+    payload = fm_to_remote(fm)
+
+    status, resp = api_call("POST", API, token, payload)
+    if status not in (200, 201):
+        print(f"  {red('FAIL')}  {rel(path)}")
+        print(dim(f"         HTTP {status}: {api_error(resp)}"))
+        print(dim("         an edit is sent as create-then-delete; the create"))
+        print(dim(f"         failed, so entry {old_id} is untouched."))
+        return False
+
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    new_id = extract_id(resp)
+    fm["sync"] = {"pulled": now, "digest": digest(fm)}
+    if new_id:
+        fm["id"] = new_id
+    else:
+        # Same guard as a plain create: it exists remotely but we cannot name
+        # it, so drop the stale id and let pull match it back.
+        fm.pop("id", None)
+        fm["sync"]["created"] = now
+        (HERE / ".last-create-response.json").write_text(
+            json.dumps(resp, indent=2), encoding="utf-8")
+
+    write_entry(path, fm, body)
+    path = relocate(path, fm)          # the id is in the filename, so this renames
+
+    ok_del, err = delete_remote([old_id], token)
+    if not ok_del:
+        # The replacement is live and the file points at it. The old entry is
+        # still out there, and will not show up as a pending delete because no
+        # file claims its id any more, so say so plainly.
+        print(f"  {yellow('warn')}  {rel(path)}")
+        print(dim(f"         replacement created, but deleting the old entry failed:"))
+        print(dim(f"         {err}"))
+        print(dim(f"         {old_id} is now a duplicate; remove it by hand."))
+        return False
+
+    if not new_id:
+        print(f"  {yellow('warn')}  {rel(path)}")
+        print(dim("         replaced, but no id in the response; saved it to"))
+        print(dim("         .last-create-response.json. Run 'fsync pull'."))
+        return True
+
+    print(f"  {green('  ok')}  {rel(path)}  {dim(f'replaced {old_id}')}")
+    return True
+
+
 def push_entry(action: str, path: Path, fm: dict, body: str,
                token: str | None, dry: bool) -> bool:
     """Send one entry. Returns True on success. Rewrites the file in place."""
@@ -686,23 +748,21 @@ def push_entry(action: str, path: Path, fm: dict, body: str,
         return False
 
     if dry:
-        verb = "POST" if action == "create" else "PATCH"
+        verb = "POST" if action == "create" else "POST+DELETE"
         print(f"  {dim(verb)}  {rel(path)}")
+        if action == "update":
+            print(dim(f"         replaces id {fm['id']} (see replace_entry)"))
         print(dim("         " + json.dumps(payload["nutritionLog"])[:160] + "..."))
         return True
 
-    if action == "create":
-        status, resp = api_call("POST", API, token, payload)
-    else:
-        status, resp = api_call("PATCH", f"{API}/{fm['id']}", token, payload)
+    if action == "update":
+        return replace_entry(path, fm, body, token)
+
+    status, resp = api_call("POST", API, token, payload)
 
     if status not in (200, 201):
         print(f"  {red('FAIL')}  {rel(path)}")
         print(dim(f"         HTTP {status}: {api_error(resp)}"))
-        if action == "update" and not fm.get("food_ref"):
-            print(dim("         this entry has no food_ref, so it is an anonymous"))
-            print(dim("         food log, which the API does not allow updating."))
-            print(dim("         delete it and create a replacement instead."))
         return False
 
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")

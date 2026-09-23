@@ -222,13 +222,38 @@ Drop it anywhere under `food/` — the path does not matter. `push` creates it,
 writes the returned id into the frontmatter, and files it under the right day. That round-trip is what makes an entry authored by hand or by an
 LLM indistinguishable from a pulled one.
 
-### What can and cannot be updated
+### Editing an entry: it is replaced, not patched
 
-An entry with a `food_ref` points at Google's food catalog and is updatable. An
-entry without one is an *anonymous* food log, and the API does not allow
-updating those — only creating and deleting. `status` flags them before you
-push, and `push` reports the API's actual rejection per file rather than failing
-quietly.
+Edit the frontmatter and push. The entry is **replaced** — a new one is
+created, the old one deleted — so it comes back with a **new id**, and the
+file is renamed to match:
+
+```
+  ok  2026-09-23/1558--black-sesame-soymilk--3843781039477682293.md  replaced 8889828334113072990
+```
+
+This is not a design preference. The v4 API has no working update for
+`nutrition-log`:
+
+| | PATCH result |
+| --- | --- |
+| Anonymous entry (no `food_ref`) | `500 INTERNAL`, even with nothing changed |
+| Identified entry (has `food_ref`) | `400 Invalid argument: data_point.name` |
+
+`updateMask` is rejected on this endpoint as an unbindable query parameter,
+and Google's own CLI registers no `update` operation for the type
+(`pkg/types/registry.go`, under a comment saying operations were confirmed by
+probing the live API). Create and delete both work, so an edit is expressed as
+both.
+
+**The create runs first.** If it fails, nothing has changed and the original
+entry is still there — deleting first would lose the entry outright when the
+create then failed. If the create succeeds but the delete doesn't, you get a
+warning naming the duplicate id, because nothing else will catch it: no file
+claims that id any more, so it won't show up as a pending delete.
+
+Anything referencing an entry by id — a note, a script — needs updating after
+an edit. If that matters more than the edit, delete and re-add by hand instead.
 
 ### Deleting an entry
 
@@ -288,9 +313,9 @@ omit, `ANYTIME`, which is what most app-logged entries use.
 ## Worth knowing
 
 - Writing food needs no Fitbit or Pixel Watch. It's your account's data store.
-- Anonymous food entries (name + macros you supply) **cannot be edited**, only
-  deleted via `:batchDelete`. Identified entries referencing a catalog `food`
-  stay editable but need a lookup, and the catalog is reportedly thin.
+- Nothing is editable in place: `PATCH` fails for both anonymous and identified
+  entries, so `fsync` expresses an edit as create-then-delete (above). Deletes
+  go through `:batchDelete` — there is no HTTP DELETE.
 - `nutrition-log` only needs `"create"` added to its `Operations` list upstream;
   the generic `data … create --json` path already exists. Small PR if you want it.
 
