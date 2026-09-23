@@ -1063,7 +1063,21 @@ def cmd_sync(args) -> int:
     n_push = len(new) + len(edited)
     print()
     if not (n_pull or n_push or d["conflicts"] or d["vanished"] or doomed):
-        print(f"{bold('in sync')} — {len(points)} remote, {len(by_id)} local")
+        # The days that actually hold entries, which is narrower than the
+        # queried range whenever a day in the middle has nothing logged.
+        days = set()
+        for fm in [remote_to_fm(dp) for dp in points] + \
+                  [fm for _, fm, _ in by_id.values()]:
+            try:
+                days.add(day_of(fm))
+            except Exception:
+                continue
+        covered = ""
+        if days:
+            lo, hi = min(days), max(days)
+            covered = (f" · {lo}" if lo == hi else f" · {lo} .. {hi}") + \
+                      f" ({len(days)} day{'s' if len(days) != 1 else ''} with entries)"
+        print(f"{bold('in sync')} — {len(points)} remote, {len(by_id)} local{covered}")
         return 0
 
     print(f"{bold('diff')} {n_pull} to pull, {n_push} to push"
