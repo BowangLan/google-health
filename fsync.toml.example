@@ -1,0 +1,26 @@
+# fsync configuration — copy to fsync.toml and edit.
+#
+#   cp fsync.toml.example fsync.toml
+#
+# Every key is optional; delete the ones you don't need. Relative paths
+# resolve against this file's directory. `~` is expanded.
+# Run `./fsync config` to see what any of this resolved to.
+
+# Where your entry files live. Point this at a synced folder, a notes vault,
+# or a separate private repo if you'd rather your food logs lived elsewhere.
+# Default: ./food
+#
+# food_dir = "~/Dropbox/health/food"
+
+# Google's ghealth CLI, used for OAuth and reads. Set this if you installed it
+# yourself instead of letting setup-wizard.sh build a copy here.
+# Default: ./google-health-cli/ghealth
+#
+# ghealth = "/usr/local/bin/ghealth"
+
+# Sync state: which remote ids have been seen, so a missing file reads as a
+# deletion. Defaults to sitting next to food_dir, which is what you want —
+# each food folder gets its own. Only set this if you have a reason.
+# Default: <food_dir>/../.fsync-index.json
+#
+# index = "~/Dropbox/health/.fsync-index.json"

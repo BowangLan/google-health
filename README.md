@@ -19,7 +19,8 @@ kept in `.env` and offered as defaults.
 | --- | --- |
 | `setup-wizard.sh` | The guided setup |
 | `flog` | Shorthand for `fsync add` |
-| `fsync` | add, pull, status, push, tidy, total |
+| `fsync` | add, pull, status, push, tidy, total, config |
+| `fsync.toml` | Optional config; `fsync.toml.example` is the template |
 | `food/` | One Markdown file per food entry |
 | `.env` | Project ID, client secret path, publishing status |
 | `docs/` | Research writeups and the sync-flow diagrams |
@@ -100,6 +101,7 @@ the data and the body free for notes that never leave this machine.
 ./fsync push               # create new entries, update changed ones
 ./fsync tidy               # file entries into their day folders
 ./fsync total yesterday    # calories for a day, from local files
+./fsync config             # where every path resolved to, and why
 ```
 
 ### Layout
@@ -126,6 +128,53 @@ frontmatter moves the file to the right day on the next `push` or `tidy`.
 
 `fsync` is a single self-contained script. Its dependencies are declared inline
 and `uv` fetches them on first run — nothing to install or activate.
+
+### Moving the food folder
+
+`food/` sits next to the script by default. To keep your entries somewhere
+else — a synced folder, a notes vault, a separate private repo — copy the
+template and set one key:
+
+```sh
+cp fsync.toml.example fsync.toml
+```
+
+```toml
+food_dir = "~/Dropbox/health/food"
+```
+
+Three ways in, highest priority first:
+
+```sh
+./fsync pull --food-dir ~/Dropbox/health/food   # one-off
+FSYNC_FOOD_DIR=~/Dropbox/health/food ./fsync pull
+                                                # this shell
+food_dir = "~/Dropbox/health/food"              # fsync.toml, permanent
+```
+
+The flag works in either position — `fsync --food-dir X pull` and
+`fsync pull --food-dir X` are the same. `fsync config` prints what actually
+resolved, which is the fastest way to check a config is being read at all:
+
+```
+config    /Users/you/google-health/fsync.toml
+  food_dir  /Users/you/Dropbox/health/food                ok
+  ghealth   /Users/you/google-health/…/ghealth            ok
+  index     /Users/you/Dropbox/health/.fsync-index.json   ok
+```
+
+`fsync.toml` also takes `ghealth` (if you installed Google's CLI yourself
+rather than letting the wizard build one here) and `index`. Paths in the file
+are relative to the file; paths on the command line are relative to you.
+
+**The index follows the food folder.** `.fsync-index.json` records which remote
+ids have been seen, so a file that disappears reads as a deletion. It defaults
+to sitting beside `food_dir` precisely so that pointing `--food-dir` at a new
+empty folder gets a fresh index — share one index across two food folders and
+every entry in the other would show up as `del`, offering to wipe them from
+Google Health. Set `index` explicitly only if you know you want that.
+
+Your config is not committed; `fsync.toml.example` is.
 
 ### The file
 

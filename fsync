@@ -19,6 +19,10 @@ is the data, the body is free-form notes that never leave this machine.
 Delete an entry by deleting its file, then pushing. push asks before removing
 anything from Google Health; --yes skips the prompt.
     fsync total yesterday   calories for a day, from local files
+    fsync config            where the food folder and ghealth resolved to
+
+The food folder defaults to ./food. Point it elsewhere with --food-dir,
+$FSYNC_FOOD_DIR, or a food_dir entry in fsync.toml.
 
 The filename is a human convenience — date, name and id — and is never parsed.
 Everything is read from the file's own frontmatter.
@@ -37,6 +41,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -45,8 +50,6 @@ from typing import Any
 import yaml
 
 HERE = Path(__file__).resolve().parent
-FOOD_DIR = HERE / "food"
-GHEALTH = Path(os.environ.get("GHEALTH", HERE / "google-health-cli" / "ghealth"))
 API = "https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoints"
 
 MEALS = {"BREAKFAST", "LUNCH", "DINNER", "SNACK", "ANYTIME"}
@@ -84,6 +87,93 @@ def rel(path: Path) -> str:
 def die(msg: str) -> None:
     print(f"fsync: {msg}", file=sys.stderr)
     raise SystemExit(1)
+
+
+# ── configuration ─────────────────────────────────────────────────────────
+#
+# Everything works with no config file at all. The file exists so the food
+# folder can live somewhere other than next to this script — a synced folder,
+# a notes vault, a separate private repo — without editing the script.
+#
+#   food_dir   where entry files live          default  ./food
+#   ghealth    Google's CLI, used for auth      default  ./google-health-cli/ghealth
+#   index      sync state, for delete detection default  alongside food_dir
+#
+# Precedence, highest wins:
+#
+#   --food-dir  →  $FSYNC_FOOD_DIR  →  fsync.toml  →  ./food
+#
+# Relative paths inside the config file resolve against the config file's own
+# directory. Relative paths passed on the command line resolve against the
+# current directory, the way any other shell argument would.
+
+CONFIG_SEARCH = (HERE / "fsync.toml",
+                 Path.home() / ".config" / "fsync" / "config.toml")
+CONFIG_KEYS = {"food_dir", "ghealth", "index"}
+
+CONFIG_PATH: Path | None = None
+FOOD_DIR = HERE / "food"
+GHEALTH = HERE / "google-health-cli" / "ghealth"
+
+
+def find_config(explicit: str | None) -> Path | None:
+    """An explicitly named config that is missing is an error, not a fallback."""
+    named = explicit or os.environ.get("FSYNC_CONFIG")
+    if named:
+        path = Path(named).expanduser()
+        if not path.is_file():
+            die(f"no config file at {path}")
+        return path
+    return next((p for p in CONFIG_SEARCH if p.is_file()), None)
+
+
+def read_config(path: Path | None) -> dict:
+    if path is None:
+        return {}
+    try:
+        cfg = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        die(f"{path}: {exc}")
+    unknown = sorted(set(cfg) - CONFIG_KEYS)
+    if unknown:
+        print(yellow(f"fsync: {path}: ignoring unknown key(s): "
+                     f"{', '.join(unknown)}"), file=sys.stderr)
+    for key, val in cfg.items():
+        if key in CONFIG_KEYS and not isinstance(val, str):
+            die(f"{path}: {key} must be a string, got {type(val).__name__}")
+    return cfg
+
+
+def configure(args: argparse.Namespace) -> None:
+    """Resolve every path this tool touches. Runs once, before any command."""
+    global CONFIG_PATH, FOOD_DIR, GHEALTH, INDEX
+
+    CONFIG_PATH = find_config(getattr(args, "config", None))
+    cfg = read_config(CONFIG_PATH)
+    base = CONFIG_PATH.parent if CONFIG_PATH else HERE
+
+    def configured(key: str, default: Path) -> Path:
+        val = cfg.get(key)
+        return (base / Path(val).expanduser()).resolve() if val else default
+
+    def given(value: str | None) -> Path:
+        return Path(value).expanduser().resolve()
+
+    FOOD_DIR = configured("food_dir", HERE / "food")
+    for override in (os.environ.get("FSYNC_FOOD_DIR"),
+                     getattr(args, "food_dir", None)):
+        if override:
+            FOOD_DIR = given(override)
+
+    GHEALTH = configured("ghealth", HERE / "google-health-cli" / "ghealth")
+    if os.environ.get("GHEALTH"):
+        GHEALTH = given(os.environ["GHEALTH"])
+
+    # The index records which remote ids we have seen, so a missing file reads
+    # as a deletion. Defaulting it next to the food folder means pointing
+    # --food-dir somewhere new gets a fresh index rather than inheriting one
+    # that would report every entry in it as deleted.
+    INDEX = configured("index", FOOD_DIR.parent / ".fsync-index.json")
 
 
 # ── auth ──────────────────────────────────────────────────────────────────
@@ -826,28 +916,52 @@ def cmd_total(args) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Show where every path resolved to, and which file decided it."""
+    print(f"{bold('config'):<9} {CONFIG_PATH or dim('none — built-in defaults')}")
+    for key, path in (("food_dir", FOOD_DIR), ("ghealth", GHEALTH),
+                      ("index", INDEX)):
+        state = green("ok") if path.exists() else yellow("missing")
+        print(f"  {key:<9} {path}  {state}")
+    if CONFIG_PATH is None:
+        print(dim(f"\n  searched: {', '.join(str(p) for p in CONFIG_SEARCH)}"))
+    return 0
+
+
 def main() -> int:
+    # Shared by the top-level parser and every subcommand, so both
+    # `fsync --food-dir X pull` and `fsync pull --food-dir X` work.
+    # SUPPRESS matters: without it a subparser writes its own None over a
+    # value the top-level parser already captured, so `fsync --food-dir X pull`
+    # would quietly ignore the flag.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", metavar="PATH", default=argparse.SUPPRESS,
+                        help="config file (default: ./fsync.toml)")
+    common.add_argument("--food-dir", metavar="PATH", default=argparse.SUPPRESS,
+                        help="where entry files live (default: ./food)")
+
     p = argparse.ArgumentParser(prog="fsync", description=__doc__,
+                                parents=[common],
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("pull", help="fetch remote entries into ./food/")
+    sp = sub.add_parser("pull", help="fetch remote entries into ./food/", parents=[common])
     sp.add_argument("--days", type=int, default=7)
     sp.add_argument("--limit", type=int, default=500)
     sp.add_argument("--force", action="store_true",
                     help="overwrite locally modified files")
     sp.set_defaults(fn=cmd_pull)
 
-    sp = sub.add_parser("status", help="what is new, changed, or in sync")
+    sp = sub.add_parser("status", help="what is new, changed, or in sync", parents=[common])
     sp.set_defaults(fn=cmd_status)
 
-    sp = sub.add_parser("push", help="create new entries, update changed ones")
+    sp = sub.add_parser("push", help="create new entries, update changed ones", parents=[common])
     sp.add_argument("-n", "--dry-run", action="store_true")
     sp.add_argument("-y", "--yes", action="store_true",
                     help="skip the delete confirmation")
     sp.set_defaults(fn=cmd_push)
 
-    sp = sub.add_parser("add", help="create an entry as a file, then push it")
+    sp = sub.add_parser("add", help="create an entry as a file, then push it", parents=[common])
     sp.add_argument("meal", help="breakfast | lunch | dinner | snack | anytime")
     sp.add_argument("name")
     sp.add_argument("kcal", type=float)
@@ -864,15 +978,20 @@ def main() -> int:
     sp.add_argument("-n", "--dry-run", action="store_true")
     sp.set_defaults(fn=cmd_add)
 
-    sp = sub.add_parser("tidy", help="file entries into their day folders")
+    sp = sub.add_parser("tidy", help="file entries into their day folders", parents=[common])
     sp.set_defaults(fn=cmd_tidy)
 
-    sp = sub.add_parser("total", help="calories for a day, from local files")
+    sp = sub.add_parser("total", help="calories for a day, from local files", parents=[common])
     sp.add_argument("date", nargs="?", default="today",
                     help="today | yesterday | YYYY-MM-DD")
     sp.set_defaults(fn=cmd_total)
 
+    sp = sub.add_parser("config", help="show resolved paths and their source",
+                        parents=[common])
+    sp.set_defaults(fn=cmd_config)
+
     args = p.parse_args()
+    configure(args)
     return args.fn(args)
 
 

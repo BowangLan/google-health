@@ -17,6 +17,9 @@ client_secret*.json
 .fsync-index.json
 .last-create-response.json
 
+# Your config: local machine paths. fsync.toml.example is the tracked template.
+/fsync.toml
+
 # Google's CLI: a clone plus a compiled Go binary, restored by setup-wizard.sh.
 /google-health-cli/
 
