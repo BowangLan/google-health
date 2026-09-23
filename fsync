@@ -415,11 +415,14 @@ def fm_to_remote(fm: dict) -> dict:
         raise ValueError(f"kcal must be a number, got {fm['kcal']!r}")
 
     su, so = to_api_time(fm["start"])
-    if fm.get("end"):
-        eu, eo = to_api_time(fm["end"])
-    else:
+    if not fm.get("end"):
+        # An entry with no end gets one minute, and we write it back into the
+        # frontmatter. Sending an end we do not record leaves the file without
+        # one while the remote has it, so every later diff reports a change
+        # that nobody made — and any local edit then reads as a conflict.
         t = dt.datetime.fromisoformat(str(fm["start"]))
-        eu, eo = to_api_time(t + dt.timedelta(minutes=1))
+        fm["end"] = (t + dt.timedelta(minutes=1)).isoformat(timespec="seconds")
+    eu, eo = to_api_time(fm["end"])
 
     n: dict[str, Any] = {
         "interval": {"startTime": su, "endTime": eu,
