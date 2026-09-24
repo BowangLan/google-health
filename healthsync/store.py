@@ -193,7 +193,10 @@ class Store:
                 "start": self.record.time(fm),
                 "summary": self.record.summary(fm),
                 "path": self.rel(path),
-                "digest": (fm.get("sync") or {}).get("digest") or prior.get("digest"),
+                "digest": (
+                    self.record.digest(fm) if not self.record.dirty(fm)
+                    else (fm.get("sync") or {}).get("digest") or prior.get("digest")
+                ),
             }
         write_atomic(
             self.index,

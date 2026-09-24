@@ -44,8 +44,8 @@ class Engine:
     def conflicts(self, fm, remote):
         if remote is None:
             return True
-        return (fm.get("sync") or {}).get("digest") != self.record.digest(
-            remote
+        return not self.record.matches_digest(
+            remote, (fm.get("sync") or {}).get("digest")
         ) and self.record.digest(fm) != self.record.digest(remote)
 
     def show_conflict(self, path, fm, remote):
@@ -75,7 +75,7 @@ class Engine:
             path = found[0]
         current, body = read_entry(path)
         fm = copy.deepcopy(op["fm"])
-        if self.record.digest(current) != op["input_digest"]:
+        if not self.record.matches_digest(current, op["input_digest"]):
             fm = current
         fm["id"] = op["new_id"]
         fm["sync"] = {
@@ -98,7 +98,7 @@ class Engine:
         """Finish a food replacement without recreating its new half."""
         old = self.remote_record(op["old_id"])
         if old is not None:
-            if op.get("old_digest") != self.record.digest(old):
+            if not self.record.matches_digest(old, op.get("old_digest")):
                 print(
                     f"  {S.bad('conf')}replacement cleanup: old id {op['old_id']} changed; "
                     f"resolve it before retrying"
@@ -433,7 +433,8 @@ class Engine:
             if remote is None:
                 gone.add(eid)
             elif not force and (
-                not meta.get("digest") or meta["digest"] != self.record.digest(remote)
+                not meta.get("digest")
+                or not self.record.matches_digest(remote, meta["digest"])
             ):
                 print(
                     f"  {S.bad('conf')}delete {eid}: "

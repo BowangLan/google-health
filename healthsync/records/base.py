@@ -19,6 +19,9 @@ class Record:
     def digest(self, fm):
         return digest_fields(fm, self.owned)
 
+    def matches_digest(self, fm, digest):
+        return digest == self.digest(fm)
+
     def time(self, fm):
         return str(fm.get(self.time_field, ""))
 
@@ -38,7 +41,7 @@ class Record:
         )
 
     def dirty(self, fm):
-        return (fm.get("sync") or {}).get("digest") != self.digest(fm)
+        return not self.matches_digest(fm, (fm.get("sync") or {}).get("digest"))
 
     def diff(self, local, remote):
         return [

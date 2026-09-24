@@ -30,6 +30,30 @@ class Food(Record):
         "food_ref",
     )
 
+    def comparable(self, fm):
+        """Google omits zero nutrients; absence and zero compare identically."""
+        result = dict(fm)
+        nutrients = {
+            key: value for key, value in (fm.get("nutrients") or {}).items()
+            if float(value) != 0
+        }
+        if nutrients:
+            result["nutrients"] = nutrients
+        else:
+            result.pop("nutrients", None)
+        return result
+
+    def digest(self, fm):
+        return super().digest(self.comparable(fm))
+
+    def matches_digest(self, fm, digest):
+        # Accept a legacy baseline only when these actual fields reproduce it.
+        # Never guess the content of a missing or edited legacy record.
+        return digest in (self.digest(fm), super().digest(fm))
+
+    def diff(self, local, remote):
+        return super().diff(self.comparable(local), self.comparable(remote))
+
     def label(self, fm):
         return str(fm.get("name", "food"))
 

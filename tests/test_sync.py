@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from healthsync.cli import main
-from healthsync.common import Clock
+from healthsync.common import Clock, digest_fields
 from healthsync.config import Config, resolve
 from healthsync.google_health import GoogleHealth, RemoteError, extract_id
 from healthsync.records.food import Food
@@ -147,6 +147,55 @@ class SyncTests(unittest.TestCase):
         self.assertNotIn("1234", e.remote.points)
         self.assertEqual(e.pull(), 0)
         self.assertFalse(e.record.dirty(next(iter(e.store.scan()[0].values()))[1]))
+
+    def test_food_zero_nutrients_round_trip_and_delete(self):
+        e = self.make_engine(Food())
+        fm = self.food()
+        fm['nutrients'] = {'PROTEIN': 23, 'IRON': 0, 'VITAMIN_C': 0}
+        e.add(fm)
+        eid = next(iter(e.remote.points))
+        # Google omits zero quantities on read, even if sent explicitly.
+        nutrients = e.remote.points[eid]['nutritionLog']['nutrients']
+        e.remote.points[eid]['nutritionLog']['nutrients'] = [
+            n for n in nutrients if n['quantity']['grams'] != 0
+        ]
+        local = next(iter(e.store.scan()[0].values()))
+        remote = e.remote_record(eid)
+        self.assertEqual(e.record.digest(local[1]), e.record.digest(remote))
+        self.assertEqual(e.record.diff(local[1], remote), [])
+        local[0].unlink()
+        self.assertEqual(e.push(yes=True), 0)
+        self.assertFalse(e.remote.points)
+
+    def test_legacy_food_zero_digest_is_clean_and_migrates_on_pull(self):
+        e = self.make_engine(Food())
+        fm = self.food()
+        fm['nutrients'] = {'PROTEIN': 23, 'IRON': 0}
+        path, fm, _ = self.pull_one(e, fm)
+        fm['sync']['digest'] = digest_fields(fm, e.record.owned)
+        write_entry(path, fm, 'Keep this note')
+        self.assertFalse(e.record.dirty(fm))
+        e.remote.points['1234']['nutritionLog']['nutrients'] = [
+            {'nutrient': 'PROTEIN', 'quantity': {'grams': 23}}
+        ]
+        self.assertEqual(e.pull(), 0)
+        updated, body = read_entry(path)
+        self.assertFalse(e.record.dirty(updated))
+        self.assertEqual(body.strip(), 'Keep this note')
+        path.unlink()
+        self.assertEqual(e.push(yes=True), 0)
+
+    def test_zero_normalization_does_not_hide_real_food_conflicts(self):
+        e = self.make_engine(Food())
+        fm = self.food()
+        fm['nutrients'] = {'PROTEIN': 23, 'IRON': 0}
+        path, _, _ = self.pull_one(e, fm)
+        e.remote.points['1234']['nutritionLog']['nutrients'] = [
+            {'nutrient': 'PROTEIN', 'quantity': {'grams': 24}}
+        ]
+        path.unlink()
+        self.assertEqual(e.push(yes=True), 1)
+        self.assertIn('1234', e.remote.points)
 
     def test_partial_replacement_retries_only_cleanup(self):
         e = self.make_engine(Food())

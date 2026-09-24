@@ -129,6 +129,13 @@ work in the original API probes. The replacement gets a new ID. Create failure
 leaves the old record intact. An incomplete replacement is now journaled: a later
 push finishes deletion of the old ID without creating another replacement.
 
+Zero-valued nutrients compare the same as omitted nutrients, matching Google's
+read responses. This applies to sync hashes and deletion conflict checks without
+changing the numbers in your files. Unchanged legacy files remain recognizable;
+pull refreshes their saved hashes, and index writes normalize known unchanged
+baselines. A deleted or edited legacy record whose old hash cannot be verified
+still requires conflict review; an old hash alone cannot reconstruct its values.
+
 ## Weight
 
 ```sh

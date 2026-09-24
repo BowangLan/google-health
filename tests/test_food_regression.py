@@ -54,6 +54,22 @@ class FoodCompatibility(unittest.TestCase):
         self.assertEqual(payload["food"], fm["food_ref"])
         self.assertNotIn("foodDisplayName", payload)
 
+    def test_absent_empty_and_all_zero_nutrients_are_equivalent(self):
+        fm = self.entry()
+        fm.pop("nutrients")
+        baseline = food.digest(fm)
+        for nutrients in ({}, {"PROTEIN": 0}, {"IRON": 0, "PROTEIN": 0}):
+            other = dict(fm, nutrients=nutrients)
+            self.assertEqual(food.digest(other), baseline)
+            self.assertEqual(food.diff(fm, other), [])
+            self.assertEqual(other["nutrients"], nutrients)
+
+    def test_nonzero_nutrient_change_is_still_dirty(self):
+        fm = self.entry()
+        fm["sync"] = {"digest": food.digest(fm)}
+        fm["nutrients"]["PROTEIN"] = 39
+        self.assertTrue(food.dirty(fm))
+
 
 if __name__ == "__main__":
     unittest.main()
