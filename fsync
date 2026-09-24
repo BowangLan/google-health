@@ -415,6 +415,36 @@ def fm_to_remote(fm: dict) -> dict:
     except (TypeError, ValueError):
         raise ValueError(f"kcal must be a number, got {fm['kcal']!r}")
 
+    # Write every normalised value back into the frontmatter. Whatever this
+    # function changes on the way out — case, type — has to land in the file
+    # too, or the file disagrees with what the API stored and every later diff
+    # reports a change nobody made. `meal: SNACk` was exactly that.
+    fm["meal"] = meal
+    fm["name"] = str(fm["name"])
+    fm["kcal"] = tidy_numbers(kcal)
+    for key in ("carbs_g", "fat_g"):
+        if fm.get(key) is not None:
+            try:
+                fm[key] = tidy_numbers(float(fm[key]))
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} must be a number, got {fm[key]!r}")
+    if fm.get("nutrients"):
+        clean = {}
+        for k, v in dict(fm["nutrients"]).items():
+            try:
+                clean[str(k).upper()] = tidy_numbers(float(v))
+            except (TypeError, ValueError):
+                raise ValueError(f"nutrient {k} must be a number, got {v!r}")
+        fm["nutrients"] = clean
+    sv0 = fm.get("serving") or {}
+    try:
+        amount = float(sv0.get("amount", 1))
+    except (TypeError, ValueError):
+        raise ValueError(f"serving amount must be a number, "
+                         f"got {sv0.get('amount')!r}")
+    fm["serving"] = {"amount": tidy_numbers(amount),
+                     "unit": str(sv0.get("unit", "serving"))}
+
     su, so = to_api_time(fm["start"])
     if not fm.get("end"):
         # An entry with no end gets one minute, and we write it back into the
