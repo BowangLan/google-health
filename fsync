@@ -20,7 +20,7 @@ is the data, the body is free-form notes that never leave this machine.
 
 Delete an entry by deleting its file, then pushing. push asks before removing
 anything from Google Health; --yes skips the prompt.
-    fsync total yesterday   calories for a day, from local files
+    fsync total yesterday   calories and protein per entry, plus daily macros
     fsync config            where the food folder and ghealth resolved to
 
 The food folder defaults to ./food. Point it elsewhere with --food-dir,
@@ -75,6 +75,7 @@ def _c(code: str, s: str) -> str:
 def green(s): return _c("32", s)
 def red(s): return _c("31", s)
 def yellow(s): return _c("33", s)
+def cyan(s): return _c("36", s)
 def dim(s): return _c("2", s)
 def bold(s): return _c("1", s)
 
@@ -1349,14 +1350,21 @@ def cmd_total(args) -> int:
         total += k
         carbs += float(fm.get("carbs_g") or 0)
         fat += float(fm.get("fat_g") or 0)
-        prot += float((fm.get("nutrients") or {}).get("PROTEIN") or 0)
+        protein = (fm.get("nutrients") or {}).get("PROTEIN")
+        p = float(protein or 0)
+        prot += p
         t = dt.datetime.fromisoformat(str(fm["start"])).strftime("%H:%M")
-        print(f"  {dim(t)}  {str(fm.get('meal','')):<9} {str(fm.get('name',''))[:46]:<46} "
-              f"{int(k):>5} kcal")
+        meal = cyan(f"{str(fm.get('meal', '')):<9}")
+        calories = yellow(f"{int(k):>5} kcal")
+        protein_text = (green(f"{p:>5.1f}g protein") if protein is not None
+                        else dim(f"{'—':>5}g protein"))
+        print(f"  {dim(t)}  {meal} {str(fm.get('name',''))[:46]:<46} "
+              f"{calories}  {protein_text}")
     print()
-    print(f"  {bold(str(day))}  {bold(str(int(total)) + ' kcal')} "
-          f"across {len(rows)} entries")
-    print(dim(f"  carbs {carbs:.0f}g · fat {fat:.0f}g · protein {prot:.0f}g"))
+    print(f"  {bold(str(day))}  {yellow(bold(str(int(total)) + ' kcal'))} "
+          f"{dim(f'across {len(rows)} entries')}")
+    print(f"  {green(f'protein {prot:.1f}g')} · "
+          f"{dim(f'carbs {carbs:.0f}g · fat {fat:.0f}g')}")
     return 0
 
 
@@ -1425,7 +1433,7 @@ def main() -> int:
     sp = sub.add_parser("tidy", help="file entries into their day folders", parents=[common])
     sp.set_defaults(fn=cmd_tidy)
 
-    sp = sub.add_parser("total", help="calories for a day, from local files", parents=[common])
+    sp = sub.add_parser("total", help="calories and protein per entry, plus daily macros", parents=[common])
     sp.add_argument("date", nargs="?", default="today",
                     help="today | yesterday | YYYY-MM-DD")
     sp.set_defaults(fn=cmd_total)

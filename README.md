@@ -102,7 +102,7 @@ the data and the body free for notes that never leave this machine.
 ./fsync push --dry-run     # show what would be sent
 ./fsync push               # create new entries, update changed ones
 ./fsync tidy               # file entries into their day folders
-./fsync total yesterday    # calories for a day, from local files
+./fsync total yesterday    # calories and protein per entry, plus daily macros
 ./fsync config             # where every path resolved to, and why
 ```
 
