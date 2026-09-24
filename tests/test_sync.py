@@ -212,6 +212,37 @@ class SyncTests(unittest.TestCase):
             e.sync()
         self.assertIn('0 match Google Health, 1 differ', self.output.getvalue())
 
+    def test_push_summary_counts_confirmed_deletions(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        self.assertEqual(e.push(yes=True), 0)
+        self.assertIn('pushed 0 saved, 1 deleted, 0 already absent', self.output.getvalue())
+
+    def test_push_summary_does_not_count_declined_or_failed_deletions(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        with patch('sys.stdin.isatty', return_value=False):
+            self.assertEqual(e.push(), 1)
+        self.assertIn('pushed 0 saved, 0 deleted', self.output.getvalue())
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(yes=True), 1)
+        self.assertIn('1234', e.store.load_index())
+        self.assertIn('0 deleted, 0 already absent, 0 recovered, 1 held or failed',
+                      self.output.getvalue())
+
+    def test_push_summary_distinguishes_preview_and_already_absent(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        self.assertEqual(e.push(dry_run=True), 0)
+        self.assertIn('would push 0 saved, 1 deleted', self.output.getvalue())
+        self.assertIn('1234', e.remote.points)
+        e.remote.points.clear()
+        self.assertEqual(e.push(yes=True), 0)
+        self.assertIn('pushed 0 saved, 0 deleted, 1 already absent', self.output.getvalue())
+
     def test_sync_reports_verified_matches_and_missing_records(self):
         e = self.engine
         self.pull_one()

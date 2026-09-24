@@ -393,11 +393,14 @@ class Engine:
         by_id, new, orphans = self.scan()
         self.store.load_index()
         failed = len(orphans)
+        recovered = deleted = 0
         for key, op in self.store.operations().items():
             if op["state"] == "cleanup" and not dry_run:
                 try:
                     if not self._cleanup(key, op):
                         failed += 1
+                    else:
+                        recovered += 1
                 except RemoteError as exc:
                     print(f"  {S.bad('part')}{op['path']}: {S.dim(exc)}")
                     failed += 1
@@ -444,6 +447,7 @@ class Engine:
                 failed += 1
             else:
                 eligible[eid] = meta
+        already_absent = len(gone)
         if eligible:
             print(
                 f"{S.bold('would delete' if dry_run else 'about to delete')} "
@@ -465,10 +469,18 @@ class Engine:
                     )
                 except (EOFError, KeyboardInterrupt):
                     confirmed = False
-            if not dry_run:
+            if dry_run:
+                deleted = len(eligible)
+            else:
                 if confirmed:
-                    self.remote.delete(list(eligible))
-                    gone.update(eligible)
+                    try:
+                        self.remote.delete(list(eligible))
+                    except RemoteError as exc:
+                        print(f"  {S.bad('FAIL')}delete: {S.dim(exc)}")
+                        failed += len(eligible)
+                    else:
+                        gone.update(eligible)
+                        deleted = len(eligible)
                 else:
                     print(
                         S.dim("deletion held; pass --yes to confirm without a terminal")
@@ -478,7 +490,8 @@ class Engine:
             self.store.save_index(self.scan()[0], drop=gone)
         print(
             f"{S.bold('would push' if dry_run else 'pushed')} "
-            f"{ok} ok, {failed} held or failed"
+            f"{ok} saved, {deleted} deleted, {already_absent} already absent, "
+            f"{recovered} recovered, {failed} held or failed"
         )
         return int(failed > 0)
 
