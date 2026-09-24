@@ -19,7 +19,7 @@ kept in `.env` and offered as defaults.
 | --- | --- |
 | `setup-wizard.sh` | The guided setup |
 | `flog` | Shorthand for `fsync add` |
-| `fsync` | add, pull, status, push, tidy, total, config |
+| `fsync` | add, clone, sync, pull, status, push, tidy, total, config |
 | `fsync.toml` | Optional config; `fsync.toml.example` is the template |
 | `food/` | One Markdown file per food entry |
 | `.env` | Project ID, client secret path, publishing status |
@@ -33,9 +33,10 @@ Only the tooling: `fsync`, `flog`, `setup-wizard.sh`, `README.md`, `docs/`.
 
 **Your food logs are not committed.** `food/` is health data and stays out of
 the repo; Google Health holds the canonical copy and `fsync pull` rebuilds the
-folder from it. Also untracked: `.env`, any `client_secret*.json`, the
-`.fsync-index.json` state file, and the `google-health-cli/` clone — all of
-them either secret or machine-local, and all restored by `./setup-wizard.sh`.
+folder from it. The `.fsync-index.json` state file lives inside `food/` and goes
+with it. Also untracked: `.env`, any `client_secret*.json`, and the
+`google-health-cli/` clone — all of them either secret or machine-local, and all
+restored by `./setup-wizard.sh`.
 
 On a fresh clone: run the wizard, then `./fsync pull --days 7`.
 
@@ -101,6 +102,7 @@ the data and the body free for notes that never leave this machine.
 ./fsync status             # what is new, changed, or in sync
 ./fsync push --dry-run     # show what would be sent
 ./fsync push               # create new entries, update changed ones
+./fsync push --force       # push an edit that also changed remotely
 ./fsync tidy               # file entries into their day folders
 ./fsync total yesterday    # calories and protein per entry, plus daily macros
 ./fsync config             # where every path resolved to, and why
@@ -163,7 +165,7 @@ range 2026-09-21 .. 2026-09-23  (3 days, from the oldest day folder)
 diff 11 to pull, 2 to push, 1 conflicted
 
   1  pull   11 from Google Health
-  2  push   2 from here
+  2  push   2 from here (1 conflicted, will be refused)
   3  both
   n  nothing
 
@@ -193,10 +195,15 @@ those flags, `sync` prints the diff and stops. **Pull runs before push**, which
 is deliberate: `pull` refuses to overwrite a file you have edited, so your
 pending changes survive it and go out on the push.
 
-Two things `sync` reports but will not act on. A **conflict** (`!`) is left
-alone entirely — pushing loses their version, `pull --force` loses yours, so it
-shows the differing fields and lets you decide. And `x` is informational:
-detecting remote deletions is new to `sync`, and `status` still can't see them.
+A **conflict** (`!`) `sync` will not resolve for you: it shows the differing
+fields and stops. Neither default is safe — `pull --force` takes theirs and
+loses yours, `push --force` takes yours and deletes theirs. Choosing push at the
+prompt is not a way round it; `push` refuses conflicted entries itself and says
+so. `x` is informational: detecting remote deletions is new to `sync`, and
+`status` still can't see them.
+
+`sync` hands the window it already fetched to `pull`, so choosing `1` or `3`
+does not query the API twice.
 
 ### Layout
 
@@ -204,6 +211,7 @@ One folder per day, one file per entry:
 
 ```
 food/
+  .fsync-index.json
   2026-09-21/
     0953--grande-iced-matcha-latte-with-oatmilk-and-pu--4238894257679590105.md
     1223--braised-pork-rice--3370798161334383301.md
@@ -252,21 +260,23 @@ resolved, which is the fastest way to check a config is being read at all:
 
 ```
 config    /Users/you/google-health/fsync.toml
-  food_dir  /Users/you/Dropbox/health/food                ok
-  ghealth   /Users/you/google-health/…/ghealth            ok
-  index     /Users/you/Dropbox/health/.fsync-index.json   ok
+  food_dir  /Users/you/Dropbox/health/food  ok
+  ghealth   /Users/you/google-health/google-health-cli/ghealth  ok
+  index     /Users/you/Dropbox/health/food/.fsync-index.json  ok
 ```
 
 `fsync.toml` also takes `ghealth` (if you installed Google's CLI yourself
 rather than letting the wizard build one here) and `index`. Paths in the file
 are relative to the file; paths on the command line are relative to you.
 
-**The index follows the food folder.** `.fsync-index.json` records which remote
-ids have been seen, so a file that disappears reads as a deletion. It defaults
-to sitting beside `food_dir` precisely so that pointing `--food-dir` at a new
-empty folder gets a fresh index — share one index across two food folders and
-every entry in the other would show up as `del`, offering to wipe them from
-Google Health. Set `index` explicitly only if you know you want that.
+**The index lives inside the food folder.** `.fsync-index.json` records which
+remote ids have been seen, so a file that disappears reads as a deletion. It
+sits *in* `food_dir`, not beside it: two food folders sharing a parent would
+otherwise share one index, and each would report every entry of the other as
+`del`, offering to wipe them from Google Health. Pointing `--food-dir` at a new
+empty folder therefore gets a fresh index, which is the point. An index left at
+the old location beside `food_dir` is moved in on the next run, once, and the
+move is printed. Set `index` explicitly only if you want it somewhere else.
 
 Your config is not committed; `fsync.toml.example` is.
 
@@ -361,9 +371,10 @@ both.
 
 **The create runs first.** If it fails, nothing has changed and the original
 entry is still there — deleting first would lose the entry outright when the
-create then failed. If the create succeeds but the delete doesn't, you get a
-warning naming the duplicate id, because nothing else will catch it: no file
-claims that id any more, so it won't show up as a pending delete.
+create then failed. If the create succeeds but the delete doesn't, the entry is
+marked `part` and counted as a failed push, naming the duplicate id, because
+nothing else will catch it: no file claims that id any more, so it won't show up
+as a pending delete.
 
 Anything referencing an entry by id — a note, a script — needs updating after
 an edit. If that matters more than the edit, delete and re-add by hand instead.
@@ -384,9 +395,13 @@ cannot be undone, `push` prints each entry it is about to delete — time, name,
 calories — and waits for a `y`. With no terminal attached it refuses outright
 rather than assuming consent; pass `--yes` for scripts.
 
-Until you push, the deletion is local only. `pull` will not re-create a file you
-deleted — it holds it and says so — and `pull --force` abandons the pending
-deletion and restores the file from the remote copy.
+Until you push, the deletion is local only, and it stays pending until something
+resolves it. `pull` will not re-create a file you deleted — it holds it and says
+so — and declining the delete prompt leaves it pending rather than forgetting
+it, so the next `push` asks again. `pull --force` abandons the deletion and
+restores the file from the remote copy in one step. A pending deletion whose
+entry has also gone from Google Health is dropped on the next `pull`: there is
+nothing left to delete.
 
 ### When a create loses its id
 
@@ -394,8 +409,10 @@ The API does not always return the new entry's id in a shape we can read. If
 that happens the entry exists remotely but the file does not know its id, and
 pushing again would create a duplicate. `fsync` marks the file with
 `sync.created`, refuses to push it again, and saves the raw response to
-`.last-create-response.json`. The next `pull` matches it on time, name and
-calories, fills in the id, and the file becomes ordinary.
+`.last-create-response.json` beside the index. The next `pull` matches it on
+time, name and calories, fills in the id, and the file becomes ordinary. If two
+remote entries match it on all three, `pull` names both ids and adopts neither
+— guessing wrong would leave a duplicate.
 
 `status` reports these as *awaiting pull*. In practice the id parses fine — this
 is a guard, not the normal path.
@@ -406,6 +423,22 @@ is a guard, not the normal path.
 it and says so. `--force` overwrites. Change detection is a hash of the fields
 you own, so metadata churn never reads as an edit.
 
+`push` will not replace an entry that changed in Google Health too. An edit goes
+out as create-then-delete, so pushing one would delete their version with
+nothing to recover it from. Before replacing anything, `push` reads back the
+days its edits touch and refuses the ones that moved on both sides:
+
+```
+  conf  2026-09-22/0800--ube-donut--…md
+         changed here and in Google Health; pushing would
+         delete their version. Take theirs with 'fsync pull
+         --force', or yours with 'fsync push --force'.
+         kcal: 285  (here)  vs  280  (remote)
+```
+
+It exits non-zero and pushes everything else. Creates don't trigger the read —
+there is nothing yet to conflict with.
+
 ## Reading the raw API
 
 `fsync` covers day-to-day use; these are for looking behind it:
@@ -414,6 +447,7 @@ you own, so metadata churn never reads as an edit.
 ghealth data nutrition-log list --format table
 ghealth data nutrition-log daily-rollup       # daily totals, to cross-check
 ghealth data nutrition-log list --raw --limit 1   # the real JSON shape
+ghealth data nutrition-log list --page-token …    # fsync follows these itself
 ghealth data food list                        # catalog, for editable entries
 ghealth auth export | jq -r '.scopes[]'       # confirm writeonly is present
 ```
@@ -431,6 +465,14 @@ omit, `ANYTIME`, which is what most app-logged entries use.
   go through `:batchDelete` — there is no HTTP DELETE.
 - `nutrition-log` only needs `"create"` added to its `Operations` list upstream;
   the generic `data … create --json` path already exists. Small PR if you want it.
+- `fsync` reads every page, not the first one. A truncated answer is worse than
+  none here: an entry the API holds but didn't return looks exactly like one
+  deleted in the app, so `sync` would call it gone and `pull` would leave it
+  stale.
+- Timestamps in frontmatter are quoted when `fsync` writes them. Unquoted, YAML
+  reads `2026-09-23T12:30:00-07:00` as a datetime rather than a string, which
+  hashes differently from what the API returns — `fsync` normalises hand-written
+  ones on read so an edited date doesn't show up as a permanent remote change.
 
 Research writeup: [`docs/google-health-food-logging.html`](docs/google-health-food-logging.html)
 Sync flows: [`docs/fsync-flows.html`](docs/fsync-flows.html)

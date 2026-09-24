@@ -406,9 +406,11 @@ $ ./fsync push
       <div class="card card-border bg-base-100">
         <div class="card-body gap-2">
           <h3 class="font-bold">Both sides changed</h3>
-          <p class="text-sm opacity-80"><code>pull</code> will not overwrite a file whose digest no longer
-            matches — it skips and says so. You choose: <code>push</code> to send yours, or
-            <code>pull --force</code> to discard yours and take the remote version.</p>
+          <p class="text-sm opacity-80">Neither command will pick for you. <code>pull</code> skips a file whose
+            digest no longer matches; <code>push</code> reads the remote back before replacing anything and
+            refuses the entry as <code>conf</code>, because an edit goes out as create-then-delete and would
+            take their version with it. You choose: <code>push --force</code> to send yours, or
+            <code>pull --force</code> to discard yours and take theirs.</p>
         </div>
       </div>
 

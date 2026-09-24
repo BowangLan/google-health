@@ -57,6 +57,10 @@ API = "https://health.googleapis.com/v4/users/me/dataTypes/nutrition-log/dataPoi
 
 MEALS = {"BREAKFAST", "LUNCH", "DINNER", "SNACK", "ANYTIME"}
 
+# Paging is followed to the end; this only stops a runaway loop if the API
+# ever returns a token that does not advance.
+MAX_PAGES = 50
+
 # Fields the user owns. Everything else in the frontmatter is metadata written
 # by this tool, and changing it locally has no effect on the remote entry.
 OWNED = ("meal", "name", "start", "end", "kcal", "carbs_g", "fat_g",
@@ -86,6 +90,19 @@ def rel(path: Path) -> str:
         return str(path.relative_to(FOOD_DIR))
     except ValueError:
         return path.name
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write via a temp file in the same directory, then rename over.
+
+    An interrupted write must not leave a truncated file: a half-written entry
+    is a lost food log, and a half-written index reads as an empty one, which
+    silently means 'no deletions pending'.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def die(msg: str) -> None:
@@ -118,6 +135,7 @@ CONFIG_KEYS = {"food_dir", "ghealth", "index"}
 CONFIG_PATH: Path | None = None
 FOOD_DIR = HERE / "food"
 GHEALTH = HERE / "google-health-cli" / "ghealth"
+INDEX = FOOD_DIR / ".fsync-index.json"
 
 
 def find_config(explicit: str | None) -> Path | None:
@@ -174,16 +192,33 @@ def configure(args: argparse.Namespace) -> None:
         GHEALTH = given(os.environ["GHEALTH"])
 
     # The index records which remote ids we have seen, so a missing file reads
-    # as a deletion. Defaulting it next to the food folder means pointing
-    # --food-dir somewhere new gets a fresh index rather than inheriting one
-    # that would report every entry in it as deleted.
-    INDEX = configured("index", FOOD_DIR.parent / ".fsync-index.json")
+    # as a deletion. It lives *inside* the food folder: parked beside it, two
+    # food folders sharing a parent would share one index, and each would
+    # report every entry of the other as deleted.
+    INDEX = configured("index", FOOD_DIR / ".fsync-index.json")
+    if not INDEX.exists():
+        legacy = FOOD_DIR.parent / ".fsync-index.json"
+        if legacy.is_file() and legacy != INDEX:
+            INDEX.parent.mkdir(parents=True, exist_ok=True)
+            legacy.rename(INDEX)
+            print(dim(f"fsync: moved index into the food folder: {INDEX}"),
+                  file=sys.stderr)
 
 
 # ── auth ──────────────────────────────────────────────────────────────────
 
+_TOKEN: str | None = None
+
+
 def access_token() -> str:
-    """Borrow ghealth's token; it owns the refresh cycle, we just read it."""
+    """Borrow ghealth's token; it owns the refresh cycle, we just read it.
+
+    Cached for the life of the process: a push that deletes and then creates
+    would otherwise spawn two refresh/export subprocess pairs for one run.
+    """
+    global _TOKEN
+    if _TOKEN:
+        return _TOKEN
     if not GHEALTH.exists():
         die(f"ghealth not found at {GHEALTH}")
     subprocess.run([str(GHEALTH), "auth", "refresh"],
@@ -195,6 +230,7 @@ def access_token() -> str:
     tok = json.loads(out.stdout).get("access_token", "")
     if not tok:
         die(f"no access token; run: {GHEALTH} auth login")
+    _TOKEN = tok
     return tok
 
 
@@ -305,7 +341,12 @@ def relocate(path: Path, fm: dict) -> Path:
     if path == want:
         return path
     if want.exists() and want.resolve() != path.resolve():
-        return path          # refuse to clobber a different entry
+        # Two entries want the same name: same minute, same slug, same id.
+        # Leaving the file where it is costs nothing — the name is decorative
+        # — but staying silent about it would look like the move happened.
+        print(yellow(f"  keep  {rel(path)}"))
+        print(dim(f"         {rel(want)} is taken; left in place"))
+        return path
     want.parent.mkdir(parents=True, exist_ok=True)
     path.rename(want)
     old = path.parent
@@ -350,6 +391,17 @@ def read_entry(path: Path) -> tuple[dict, str]:
     fm = yaml.safe_load(parts[1])
     if not isinstance(fm, dict):
         raise ValueError("frontmatter is not a mapping")
+    # YAML resolves an unquoted 2026-09-23T12:00:00-07:00 into a datetime,
+    # whose str() separates the date with a space where ISO uses T. That
+    # hashes differently from the string the API round-trips as, so the entry
+    # would read as changed remotely on every sync, forever. Hand-edited files
+    # are the normal case here, so normalise on the way in.
+    for key in ("start", "end"):
+        val = fm.get(key)
+        if isinstance(val, dt.datetime):
+            fm[key] = val.isoformat()
+        elif isinstance(val, dt.date):
+            fm[key] = val.isoformat()
     return fm, parts[2].lstrip("\n")
 
 
@@ -363,8 +415,7 @@ def write_entry(path: Path, fm: dict, body: str = "") -> None:
             ordered[k] = v
     head = yaml.safe_dump(tidy_numbers(ordered), sort_keys=False,
                           allow_unicode=True, default_flow_style=False).rstrip()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"---\n{head}\n---\n\n{body.strip()}\n", encoding="utf-8")
+    write_atomic(path, f"---\n{head}\n---\n\n{body.strip()}\n")
 
 
 # ── conversion ────────────────────────────────────────────────────────────
@@ -482,27 +533,43 @@ def fm_to_remote(fm: dict) -> dict:
 
 # ── local index ───────────────────────────────────────────────────────────
 
-INDEX = HERE / ".fsync-index.json"
-
-
 def load_index() -> dict[str, dict]:
     """Entries we have seen. A known id with no file means you deleted it."""
     if not INDEX.exists():
         return {}
     try:
         return json.loads(INDEX.read_text()).get("entries", {})
-    except Exception:
+    except Exception as exc:
+        # Reading this as an empty index would silently mean 'nothing was
+        # deleted', and the next save would make that permanent. Say so.
+        print(yellow(f"fsync: {INDEX} is unreadable ({exc});"), file=sys.stderr)
+        print(yellow("       pending deletions cannot be recovered from it"),
+              file=sys.stderr)
         return {}
 
 
-def save_index(by_id: dict) -> None:
+def save_index(by_id: dict, drop: set[str] = frozenset()) -> None:
+    """Record every id we have a file for, and keep the ids we do not.
+
+    An id in the index with no file on disk is a tombstone: you deleted the
+    entry and push has not removed it from Google Health yet. Rebuilding the
+    index from disk alone would drop it, and a dropped tombstone is
+    indistinguishable from an entry we never had — so the next pull would
+    cheerfully re-create the file you deleted.
+
+    `drop` clears tombstones that are resolved: deleted remotely, restored
+    locally, or confirmed gone from Google Health.
+    """
     entries = {
         eid: {"name": fm.get("name", ""), "start": str(fm.get("start", "")),
               "kcal": fm.get("kcal"), "path": rel(path)}
         for eid, (path, fm, _) in by_id.items()
     }
-    INDEX.write_text(json.dumps({"entries": entries}, indent=2, sort_keys=True),
-                     encoding="utf-8")
+    for eid, meta in load_index().items():
+        if eid not in entries and eid not in drop:
+            entries[eid] = meta
+    write_atomic(INDEX, json.dumps({"entries": entries}, indent=2,
+                                   sort_keys=True))
 
 
 def pending_deletes(by_id: dict) -> dict[str, dict]:
@@ -559,22 +626,34 @@ def is_dirty(fm: dict) -> bool:
 
 # ── commands ──────────────────────────────────────────────────────────────
 
-def fetch_remote(since: str, limit: int, quiet: bool = False) -> list[dict]:
-    """Read entries from `since` to today via ghealth. Reads only, never writes."""
+def fetch_remote(since: str, limit: int) -> list[dict]:
+    """Read every entry from `since` to today via ghealth. Never writes.
+
+    Pages are followed to the end. A partial answer is worse than no answer
+    here: an entry the remote holds but did not return is indistinguishable
+    from one deleted in the app, so sync would report it as gone and pull
+    would silently leave it stale.
+    """
     cmd = [str(GHEALTH), "data", "nutrition-log", "list",
            "--from", since, "--to", "today", "--raw", "--limit", str(limit)]
-    if not quiet:
-        print(dim(f"$ {' '.join(cmd)}"))
-    out = subprocess.run(cmd, capture_output=True, text=True)
-    if out.returncode != 0:
-        die(f"fetch failed: {out.stderr.strip() or out.stdout.strip()}")
-    try:
-        payload = json.loads(out.stdout)
-    except json.JSONDecodeError:
-        die(f"unexpected response: {out.stdout[:300]}")
-    if payload.get("nextPageToken"):
-        print(yellow(f"  note: more pages exist; raise --limit above {limit}"))
-    return payload.get("dataPoints", [])
+    print(dim(f"$ {' '.join(cmd)}"))
+    points: list[dict] = []
+    token = ""
+    for _ in range(MAX_PAGES):
+        out = subprocess.run(cmd + (["--page-token", token] if token else []),
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            die(f"fetch failed: {out.stderr.strip() or out.stdout.strip()}")
+        try:
+            payload = json.loads(out.stdout)
+        except json.JSONDecodeError:
+            die(f"unexpected response: {out.stdout[:300]}")
+        points += payload.get("dataPoints", [])
+        token = payload.get("nextPageToken") or ""
+        if not token:
+            return points
+        print(dim(f"  … {len(points)} so far, fetching the next page"))
+    die(f"more than {MAX_PAGES} pages of results; narrow the date range")
 
 
 def earliest_day() -> dt.date:
@@ -595,9 +674,11 @@ def earliest_day() -> dt.date:
     return min(days) if days else dt.date.today()
 
 
-def cmd_pull(args) -> int:
+def cmd_pull(args, points: list[dict] | None = None) -> int:
     since = (dt.date.today() - dt.timedelta(days=args.days - 1)).isoformat()
-    points = fetch_remote(since, args.limit)
+    # sync has already fetched this exact window; don't ask twice.
+    if points is None:
+        points = fetch_remote(since, args.limit)
 
     by_id, _, orphans, _ = scan()
     created = updated = skipped = unchanged = adopted = 0
@@ -605,10 +686,21 @@ def cmd_pull(args) -> int:
 
     # Reconcile orphans first: an entry we created but could not name.
     if orphans:
-        remote_by_key = {match_key(remote_to_fm(dp)): remote_to_fm(dp)["id"]
-                         for dp in points}
+        remote_by_key: dict[tuple, list[str]] = {}
+        for dp in points:
+            fm_r = remote_to_fm(dp)
+            remote_by_key.setdefault(match_key(fm_r), []).append(fm_r["id"])
         for path, fm, body in orphans:
-            found = remote_by_key.get(match_key(fm))
+            candidates = remote_by_key.get(match_key(fm), [])
+            if len(candidates) > 1:
+                # Same minute, same name, same calories: adopting either id
+                # would be a guess, and guessing wrong leaves a duplicate.
+                print(f"  {yellow('orph')}  {rel(path)}")
+                print(dim(f"         {len(candidates)} remote entries match it "
+                          f"exactly; adopt one by hand"))
+                print(dim(f"         ids: {', '.join(candidates)}"))
+                continue
+            found = candidates[0] if candidates else None
             if not found:
                 print(f"  {yellow('orph')}  {rel(path)}")
                 print(dim("         created remotely but not found in this window;"))
@@ -626,7 +718,7 @@ def cmd_pull(args) -> int:
     for dp in points:
         fm = remote_to_fm(dp)
         eid = fm["id"]
-        if eid in doomed:
+        if eid in doomed and not args.force:
             # Deleted locally and not yet pushed. Re-creating it here would
             # silently undo the deletion.
             print(f"  {yellow('held')}  {doomed[eid].get('path', eid)}")
@@ -634,6 +726,8 @@ def cmd_pull(args) -> int:
             print(dim("         remotely, or 'fsync pull --force' to restore it"))
             skipped += 1
             continue
+        # --force here means: abandon the deletion and write the file back.
+        # The file returning is what clears the tombstone; see save_index.
         fm["sync"] = {"pulled": now, "digest": digest(fm)}
         existing = by_id.get(eid)
 
@@ -662,9 +756,16 @@ def cmd_pull(args) -> int:
             created += 1
 
     print()
-    if args.force and doomed:
-        INDEX.unlink(missing_ok=True)          # --force abandons the deletions
-    save_index(scan()[0])
+    # A tombstone the remote no longer returns is already gone on both sides:
+    # stop tracking a deletion that has nothing left to delete. Only ids dated
+    # inside the window we just fetched can be judged this way — the fetch ends
+    # at today, so an entry dated later was never in the answer to begin with.
+    returned = {str(dp.get("name", "")).rsplit("/", 1)[-1] for dp in points}
+    until = dt.date.today().isoformat()
+    gone = {eid for eid, meta in doomed.items()
+            if eid not in returned
+            and since <= str(meta.get("start", ""))[:10] <= until}
+    save_index(scan()[0], drop=gone)
     tail = f", {adopted} adopted" if adopted else ""
     print(f"{bold('pulled')} {len(points)} entries since {since}: "
           f"{created} new, {updated} updated, {unchanged} unchanged, "
@@ -771,7 +872,7 @@ def replace_entry(path: Path, fm: dict, body: str, token: str) -> bool:
         # it, so drop the stale id and let pull match it back.
         fm.pop("id", None)
         fm["sync"]["created"] = now
-        (HERE / ".last-create-response.json").write_text(
+        (INDEX.parent / ".last-create-response.json").write_text(
             json.dumps(resp, indent=2), encoding="utf-8")
 
     write_entry(path, fm, body)
@@ -782,11 +883,11 @@ def replace_entry(path: Path, fm: dict, body: str, token: str) -> bool:
         # The replacement is live and the file points at it. The old entry is
         # still out there, and will not show up as a pending delete because no
         # file claims its id any more, so say so plainly.
-        print(f"  {yellow('warn')}  {rel(path)}")
+        print(f"  {red('part')}  {rel(path)}")
         print(dim(f"         replacement created, but deleting the old entry failed:"))
         print(dim(f"         {err}"))
         print(dim(f"         {old_id} is now a duplicate; remove it by hand."))
-        return False
+        return False          # counted as failed: someone has to act on it
 
     if not new_id:
         print(f"  {yellow('warn')}  {rel(path)}")
@@ -836,7 +937,7 @@ def push_entry(action: str, path: Path, fm: dict, body: str,
             # Created, but unnamed. Mark it so a second push cannot duplicate
             # it; pull matches it on time/name/kcal and fills in the id.
             fm["sync"]["created"] = now
-            (HERE / ".last-create-response.json").write_text(
+            (INDEX.parent / ".last-create-response.json").write_text(
                 json.dumps(resp, indent=2), encoding="utf-8")
             print(f"  {yellow('warn')}  {rel(path)}")
             print(dim("         created, but no id in the response; saved it to"))
@@ -860,6 +961,37 @@ def extract_id(resp: Any) -> str:
     return ""
 
 
+def remote_conflicts(updates: list[Entry], limit: int) -> dict[str, dict]:
+    """Edited entries whose remote side also moved. Reads only.
+
+    An edit is sent as create-then-delete (see replace_entry), so pushing an
+    entry that changed in Google Health too deletes their version with nothing
+    to recover it from. `sync` has always reported this; push could not,
+    because it never looked at the remote at all.
+    """
+    days = []
+    for _, fm, _ in updates:
+        try:
+            days.append(dt.date.fromisoformat(day_of(fm)))
+        except ValueError:
+            continue
+    since = min(days) if days else dt.date.today()
+    remote = {}
+    for dp in fetch_remote(since.isoformat(), limit):
+        fm_r = remote_to_fm(dp)
+        remote[fm_r["id"]] = fm_r
+
+    blocked = {}
+    for _, fm, _ in updates:
+        fm_r = remote.get(str(fm.get("id")))
+        if fm_r is None:
+            continue          # already gone remotely, or outside the window
+        stored = (fm.get("sync") or {}).get("digest")
+        if stored != digest(fm_r):
+            blocked[str(fm["id"])] = fm_r
+    return blocked
+
+
 def cmd_push(args) -> int:
     by_id, new, orphans, broken = scan()
     for path, err in broken:
@@ -871,13 +1003,32 @@ def cmd_push(args) -> int:
         print(dim("         to recover it. Pushing again would duplicate the entry."))
 
     doomed = pending_deletes(by_id)
-    work: list[tuple[str, Path, dict, str]] = [("create", p, fm, b) for p, fm, b in new]
-    work += [("update", p, fm, b) for p, fm, b in by_id.values() if is_dirty(fm)]
-    if not work and not doomed:
+    updates: list[Entry] = [(p, fm, b) for p, fm, b in by_id.values()
+                            if is_dirty(fm)]
+    if not (new or updates or doomed):
         print(dim("nothing to push"))
         return 1 if broken else 0
 
+    blocked: dict[str, dict] = {}
+    if updates and not args.dry_run and not args.force:
+        blocked = remote_conflicts(updates, args.limit)
+        for path, fm, _ in updates:
+            fm_r = blocked.get(str(fm.get("id")))
+            if fm_r is None:
+                continue
+            print(f"  {red('conf')}  {rel(path)}")
+            print(dim("         changed here and in Google Health; pushing would"))
+            print(dim("         delete their version. Take theirs with 'fsync pull"))
+            print(dim("         --force', or yours with 'fsync push --force'."))
+            for key, mine, theirs in field_diff(fm, fm_r):
+                print(dim(f"         {key}: {mine}  (here)  vs  {theirs}  (remote)"))
+
+    work: list[tuple[str, Path, dict, str]] = [("create", p, fm, b) for p, fm, b in new]
+    work += [("update", p, fm, b) for p, fm, b in updates
+             if str(fm.get("id")) not in blocked]
+
     deleted = refused = 0
+    resolved: set[str] = set()
     if doomed:
         if args.dry_run:
             print(f"{bold('would delete')} {len(doomed)} entries:")
@@ -889,26 +1040,25 @@ def cmd_push(args) -> int:
             ok_del, err = delete_remote(list(doomed), token)
             if ok_del:
                 deleted = len(doomed)
+                resolved = set(doomed)
                 print(f"  {green('  ok')}  deleted {deleted} remotely")
-                idx = load_index()
-                for eid in doomed:
-                    idx.pop(eid, None)
-                INDEX.write_text(json.dumps({"entries": idx}, indent=2,
-                                            sort_keys=True), encoding="utf-8")
+                save_index(scan()[0], drop=resolved)
             else:
                 refused = len(doomed)
                 print(f"  {red('FAIL')}  delete refused")
                 print(dim(f"         {err}"))
         else:
             refused = len(doomed)
-            print(dim("  deletion cancelled; files stay gone locally but the"))
-            print(dim("  remote entries remain. 'fsync pull --force' restores them."))
+            print(dim("  deletion cancelled; the files stay gone locally and the"))
+            print(dim("  remote entries remain. They are still pending: push again"))
+            print(dim("  to delete them, or 'fsync pull --force' to restore them."))
         print()
 
     if not work:
-        print(f"{bold('pushed')} 0 ok, {refused} failed"
+        stuck = refused + len(blocked)
+        print(f"{bold('pushed')} 0 ok, {stuck} failed"
               + (f", {deleted} deleted" if deleted else ""))
-        return 1 if (refused or broken) else 0
+        return 1 if (stuck or broken) else 0
 
     token = None if args.dry_run else access_token()
     ok = failed = 0
@@ -919,12 +1069,13 @@ def cmd_push(args) -> int:
             failed += 1
 
     if not args.dry_run:
-        save_index(scan()[0])
+        save_index(scan()[0], drop=resolved)
     print()
     label = "would push" if args.dry_run else "pushed"
     extra = f", {deleted} deleted" if deleted else ""
+    extra += f", {len(blocked)} conflicted" if blocked else ""
     print(f"{bold(label)} {ok} ok, {failed + refused} failed{extra}")
-    return 1 if (failed or refused) else 0
+    return 1 if (failed or refused or blocked) else 0
 
 
 def cmd_add(args) -> int:
@@ -936,6 +1087,8 @@ def cmd_add(args) -> int:
         if not re.fullmatch(r"\d{1,2}:\d{2}", args.at):
             die(f"--at wants HH:MM, got {args.at!r}")
         h, m = (int(x) for x in args.at.split(":"))
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            die(f"--at wants a real time of day, got {args.at!r}")
         start = dt.datetime.now().astimezone().replace(
             hour=h, minute=m, second=0, microsecond=0)
     else:
@@ -1270,9 +1423,11 @@ def cmd_sync(args) -> int:
         if n_pull:
             print(f"  {bold('1')}  pull   {n_pull} from Google Health")
             keys.append("1")
-        if n_push or doomed:
+        if n_push or doomed or d["conflicts"]:
             print(f"  {bold('2')}  push   {n_push} from here"
-                  + (f", delete {len(doomed)} remotely" if doomed else ""))
+                  + (f", delete {len(doomed)} remotely" if doomed else "")
+                  + (f" ({len(d['conflicts'])} conflicted, will be refused)"
+                     if d["conflicts"] else ""))
             keys.append("2")
         if len(keys) == 2:
             print(f"  {bold('3')}  both")
@@ -1291,14 +1446,19 @@ def cmd_sync(args) -> int:
 
     rc = 0
     # Pull first: it refuses to overwrite files you have edited, so the local
-    # changes queued for the push survive it.
+    # changes queued for the push survive it. It reuses the window we just
+    # fetched rather than asking the API for the same days again.
     if choice in ("pull", "both") and n_pull:
         print()
-        rc |= cmd_pull(argparse.Namespace(days=span, limit=args.limit,
-                                          force=False))
-    if choice in ("push", "both") and (n_push or doomed):
+        rc = max(rc, cmd_pull(argparse.Namespace(days=span, limit=args.limit,
+                                                 force=False), points))
+    # Conflicts are counted out of n_push because sync will not pick a side,
+    # but push must still be told about them — it reports each one and exits
+    # non-zero rather than leaving the user with a silent no-op.
+    if choice in ("push", "both") and (n_push or doomed or d["conflicts"]):
         print()
-        rc |= cmd_push(argparse.Namespace(dry_run=False, yes=args.yes))
+        rc = max(rc, cmd_push(argparse.Namespace(dry_run=False, yes=args.yes,
+                                                 limit=args.limit, force=False)))
     return rc
 
 
@@ -1411,6 +1571,10 @@ def main() -> int:
     sp.add_argument("-n", "--dry-run", action="store_true")
     sp.add_argument("-y", "--yes", action="store_true",
                     help="skip the delete confirmation")
+    sp.add_argument("--limit", type=int, default=500,
+                    help="entries to read back when checking for conflicts")
+    sp.add_argument("--force", action="store_true",
+                    help="push edits even if the entry also changed remotely")
     sp.set_defaults(fn=cmd_push)
 
     sp = sub.add_parser("add", help="create an entry as a file, then push it", parents=[common])

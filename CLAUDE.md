@@ -21,22 +21,27 @@ Run `./fsync add` with the supplied nutrition values. For example:
 
 ## Past dates and additional nutrients
 
-Currently `add -t HH:MM` only sets a time today; there is no date or sodium flag.
-For these requests:
+Currently `add -t HH:MM` only sets a time today (a real time of day; `25:00` is
+rejected), and there is no date or sodium flag. For these requests:
 
 1. Run `./fsync add ... --no-push` to create the entry with supported values.
 2. Edit only the resulting file: set `start` to the requested date with its
    correct timezone offset, and add extra values under `nutrients`.
+   Quote the timestamp — `start: '2026-09-20T12:00:00-07:00'`.
    All nutrient values are grams: 480 mg sodium is `SODIUM: 0.48`.
    For a past date without a time, use noon and note in the body that it is a
    placeholder; keep the meal `ANYTIME`.
 3. Run `./fsync status`. If only the requested entry is pending, run
-   `./fsync push`. This command acts on all pending changes, including deletions;
-   if other changes are pending, consult `fsync` for its single-entry push helper
-   and sync only the requested entry.
+   `./fsync push`. There is no single-entry push: the command acts on every
+   pending change, including deletions. If anything else is pending, stop and
+   say what else would go out rather than pushing it.
 
 If a create may have succeeded but its ID was not saved, reconcile with
 `./fsync pull` before retrying; a blind retry can duplicate the entry.
+
+`push` refuses an entry that changed both here and in Google Health, prints
+`conf` with the differing fields, and exits non-zero. Do not pass `--force` to
+get past it — report the conflict and let the user pick a side.
 
 For sync conflicts, setup, or tooling changes, consult the relevant section of
 `README.md`. Food logs and credentials stay untracked.
