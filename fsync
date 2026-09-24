@@ -11,6 +11,7 @@ is the data, the body is free-form notes that never leave this machine.
 
     fsync add lunch "Burrito" 650 -p 38
                             create an entry as a file and push it
+    fsync clone "sun cake"  copy a past entry at a new amount
     fsync sync              diff both sides, then choose what to do
     fsync pull --days 7     fetch remote entries into ./food/
     fsync status            what is new, changed, or in sync
@@ -946,6 +947,144 @@ def cmd_add(args) -> int:
     return 0 if good else 1
 
 
+def scale(value: Any, factor: float) -> Any:
+    """Multiply a macro, trimming the float noise that 0.1-style factors make."""
+    try:
+        out = round(float(value) * factor, 6)
+    except (TypeError, ValueError):
+        return value
+    return int(out) if out == int(out) else out
+
+
+def start_key(fm: dict) -> str:
+    """Sortable start time. Falls back to the raw string if it will not parse."""
+    try:
+        return dt.datetime.fromisoformat(str(fm["start"])).astimezone(
+            dt.timezone.utc).isoformat()
+    except Exception:
+        return str(fm.get("start", ""))
+
+
+def clone_matches(keyword: str) -> list[tuple[Path, dict]]:
+    """Latest entry for each distinct name matching `keyword`, newest first."""
+    by_id, new, orphans, _ = scan()
+    everything = [(p, fm) for p, fm, _ in by_id.values()]
+    everything += [(p, fm) for p, fm, _ in new]
+    everything += [(p, fm) for p, fm, _ in orphans]
+
+    kw = keyword.strip().lower()
+    latest: dict[str, tuple[Path, dict]] = {}
+    for path, fm in everything:
+        name = str(fm.get("name", ""))
+        if kw not in name.lower():
+            continue
+        key = name.strip().lower()
+        if key not in latest or start_key(fm) > start_key(latest[key][1]):
+            latest[key] = (path, fm)
+    return sorted(latest.values(), key=lambda t: start_key(t[1]), reverse=True)
+
+
+def cmd_clone(args) -> int:
+    rows = clone_matches(args.keyword)
+    if not rows:
+        print(dim(f"no local entry matching {args.keyword!r}"))
+        return 1
+
+    shown = rows[:10]
+    for i, (_, fm) in enumerate(shown, 1):
+        sv = fm.get("serving") or {}
+        when = str(fm.get("start", ""))[5:16].replace("T", " ")
+        portion = f"{tidy_numbers(sv.get('amount', 1))} {sv.get('unit', 'serving')}"
+        print(f"  {bold(str(i)):>3}  {dim(when)}  {str(fm.get('name',''))[:38]:38} "
+              f"{portion:14} {int(fm.get('kcal') or 0):>5} kcal")
+    if len(rows) > len(shown):
+        print(dim(f"       … {len(rows) - len(shown)} more; narrow the keyword"))
+    print()
+
+    # --index / --amount exist so this is scriptable and testable; without them
+    # the command is a prompt.
+    if args.index is not None:
+        pick = args.index
+    elif not sys.stdin.isatty():
+        print(dim("  not a terminal; pass --index N --amount X to act"))
+        return 0
+    else:
+        try:
+            pick = int(input(f"  {yellow('?')} which? [1-{len(shown)}] ").strip())
+        except (EOFError, KeyboardInterrupt, ValueError):
+            print()
+            print(dim("  nothing done"))
+            return 0
+    if not 1 <= pick <= len(shown):
+        print(dim(f"  no entry {pick}"))
+        return 1
+
+    src_path, src = shown[pick - 1]
+    sv = src.get("serving") or {}
+    src_amount = float(sv.get("amount") or 1) or 1.0
+    unit = sv.get("unit", "serving")
+
+    if args.amount is not None:
+        amount = args.amount
+    else:
+        try:
+            raw = input(f"  {yellow('?')} amount? [{tidy_numbers(src_amount)} "
+                        f"{unit}] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print(dim("  nothing done"))
+            return 0
+        try:
+            amount = float(raw) if raw else src_amount
+        except ValueError:
+            die(f"amount must be a number, got {raw!r}")
+    if amount <= 0:
+        die("amount must be greater than zero")
+
+    # Every number in an entry is a total for the portion, so a different
+    # portion means every number moves with it.
+    factor = amount / src_amount
+    fm: dict[str, Any] = {
+        "meal": str(src.get("meal", "ANYTIME")).upper(),
+        "name": src.get("name", ""),
+        "start": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "kcal": scale(src.get("kcal"), factor),
+    }
+    for key in ("carbs_g", "fat_g"):
+        if src.get(key) is not None:
+            fm[key] = scale(src[key], factor)
+    if src.get("nutrients"):
+        fm["nutrients"] = {k: scale(v, factor) for k, v in src["nutrients"].items()}
+    fm["serving"] = {"amount": tidy_numbers(amount), "unit": unit}
+    if src.get("food_ref"):
+        fm["food_ref"] = src["food_ref"]
+
+    if factor != 1:
+        print(dim(f"  scaled ×{tidy_numbers(round(factor, 4))} from "
+                  f"{tidy_numbers(src_amount)} {unit}"))
+    print(f"  {bold(str(fm['name']))}  {tidy_numbers(fm['kcal'])} kcal · "
+          + " · ".join(f"{k} {tidy_numbers(v)}" for k, v in
+                       (("carbs", fm.get("carbs_g")), ("fat", fm.get("fat_g")),
+                        ("protein", (fm.get("nutrients") or {}).get("PROTEIN")))
+                       if v is not None)
+          + f" · {tidy_numbers(amount)} {unit}")
+
+    path = entry_path(fm)
+    if path.exists():
+        die(f"{rel(path)} already exists")
+    note = f"Cloned from {rel(src_path)}."
+    write_entry(path, fm, note)
+    print(f"  {green(' new')}  {rel(path)}")
+
+    if args.no_push:
+        print()
+        print(dim("file written; run 'fsync push' when you want it sent"))
+        return 0
+    token = None if args.dry_run else access_token()
+    good = push_entry("create", path, fm, note, token, args.dry_run)
+    return 0 if good else 1
+
+
 def field_diff(local: dict, remote: dict) -> list[tuple[str, Any, Any]]:
     """Owned fields that differ, normalised the same way the digest is."""
     out = []
@@ -1260,6 +1399,15 @@ def main() -> int:
     sp.add_argument("date", nargs="?", default="today",
                     help="today | yesterday | YYYY-MM-DD")
     sp.set_defaults(fn=cmd_total)
+
+    sp = sub.add_parser("clone", help="copy a past entry at a new amount",
+                        parents=[common])
+    sp.add_argument("keyword", help="matched against past entry names")
+    sp.add_argument("--index", type=int, help="skip the prompt, pick this row")
+    sp.add_argument("--amount", type=float, help="skip the prompt, use this amount")
+    sp.add_argument("--no-push", action="store_true", help="write the file only")
+    sp.add_argument("-n", "--dry-run", action="store_true")
+    sp.set_defaults(fn=cmd_clone)
 
     sp = sub.add_parser("sync", help="diff local against remote, then choose",
                         parents=[common])

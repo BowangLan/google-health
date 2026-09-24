@@ -95,6 +95,7 @@ Every food entry is one Markdown file in `food/`, with YAML frontmatter holding
 the data and the body free for notes that never leave this machine.
 
 ```sh
+./fsync clone "sun cake"   # copy a past entry at a new amount
 ./fsync sync               # diff both sides, then choose
 ./fsync pull --days 7      # fetch remote entries into ./food/
 ./fsync status             # what is new, changed, or in sync
@@ -104,6 +105,43 @@ the data and the body free for notes that never leave this machine.
 ./fsync total yesterday    # calories for a day, from local files
 ./fsync config             # where every path resolved to, and why
 ```
+
+### `clone` — log something you have eaten before
+
+Search past entries by name, pick one, give the portion:
+
+```
+$ ./fsync clone "sun cake"
+    1  09-22 14:36  TYT SUN CAKE     2 piece    400 kcal
+    2  09-21 18:30  Sun cake         2 piece    400 kcal
+
+  ? which? [1-2] 1
+  ? amount? [2 piece] 1
+  scaled ×0.5 from 2 piece
+  TYT SUN CAKE  200 kcal · carbs 30 · fat 8 · protein 3 · 1 piece
+   new  2026-09-23/1646--tyt-sun-cake.md
+```
+
+**The amount rescales every number**, because each one is a total for the
+portion and not a per-unit rate. Half the pieces is half the calories, half the
+carbs, half of every entry under `nutrients` — including the ones `fsync add`
+has no flag for, like sodium and cholesterol, which is the main reason to clone
+rather than retype. Press enter to keep the original portion and copy it
+verbatim.
+
+One row per distinct name, most recent first, ten at most; a food you log often
+appears once, as you last logged it. The keyword is a case-insensitive substring
+of the name. Matching searches every local file, so it only finds what you have
+pulled — widen with `fsync pull --days N` if something older is missing.
+
+The clone is logged at the current time with the source's meal type, and pushed
+like `fsync add`. `--no-push` writes the file only, `--index N --amount X` skip
+both prompts for scripts. The file body records where it came from.
+
+An identified entry keeps its `food_ref`, so the clone still points at the same
+catalog food. Google may recompute the macros from the catalog and your amount
+rather than honouring the scaled numbers — a `pull` afterwards will show what it
+actually stored.
 
 ### `sync` — see the difference first, then choose
 
