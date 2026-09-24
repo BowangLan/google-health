@@ -12,6 +12,7 @@ import json
 import sys
 from collections import Counter
 
+from healthsync import style as S
 from healthsync.common import Clock
 from healthsync.google_health import RemoteError, extract_id
 from healthsync.store import read_entry, write_entry
@@ -26,7 +27,7 @@ class Engine:
         result = self.store.scan()
         if result[3]:
             for path, error in result[3]:
-                print(f"  bad   {self.store.rel(path)}: {error}")
+                print(f"  {S.bad('bad')}{self.store.rel(path)}: {S.dim(error)}")
             raise ValueError("fix unreadable or duplicate records before syncing")
         return result[:3]
 
@@ -49,8 +50,8 @@ class Engine:
 
     def show_conflict(self, path, fm, remote):
         print(
-            f"  conf  {self.store.rel(path)}: "
-            + (
+            f"  {S.bad('conf')}{self.store.rel(path)}: "
+            + S.dim(
                 "record was deleted remotely"
                 if remote is None
                 else "changed here and in Google Health"
@@ -58,7 +59,7 @@ class Engine:
         )
         if remote:
             for key, mine, theirs in self.record.diff(fm, remote):
-                print(f"         {key}: {mine} (here) vs {theirs} (remote)")
+                print(S.dim(f"         {key}: {mine} (here) vs {theirs} (remote)"))
 
     def _commit(self, key, op, keep=False):
         """Persist an acknowledged result; preserve edits made during recovery."""
@@ -99,7 +100,8 @@ class Engine:
         if old is not None:
             if op.get("old_digest") != self.record.digest(old):
                 print(
-                    f"  conf  replacement cleanup: old id {op['old_id']} changed; resolve it before retrying"
+                    f"  {S.bad('conf')}replacement cleanup: old id {op['old_id']} changed; "
+                    f"resolve it before retrying"
                 )
                 return False
             self.remote.delete([op["old_id"]])
@@ -127,11 +129,16 @@ class Engine:
                     self.store.save_index(self.scan()[0])
                 return True
         if dry_run:
-            print(f"  {action:7} {self.store.rel(path)}  {json.dumps(payload)}")
+            print(
+                f"  {S.note(action, 7)}{self.store.rel(path)}  "
+                f"{S.dim(json.dumps(payload))}"
+            )
             return True
         key = self.store.rel(path)
         if key in self.store.operations():
-            print(f"  hold  {key}: pending operation; run pull to reconcile")
+            print(
+                f"  {S.warn('hold')}{key}: {S.dim('pending operation; run pull to reconcile')}"
+            )
             return False
         op = {
             "action": action,
@@ -153,7 +160,7 @@ class Engine:
         except RemoteError as exc:
             if not exc.uncertain:
                 self.store.operation(key, None)
-            print(f"  FAIL  {key}: {exc}")
+            print(f"  {S.bad('FAIL')}{key}: {S.dim(exc)}")
             return False
         new_id = fm["id"] if action == "patch" else extract_id(response)
         op.update(response=response, new_id=new_id, state="acknowledged")
@@ -163,7 +170,8 @@ class Engine:
                 fm["sync"] = {"created": op["created"]}
                 write_entry(path, fm, body)
             print(
-                f"  hold  {key}: created but no id returned; run pull before retrying"
+                f"  {S.warn('hold')}{key}: "
+                f"{S.dim('created but no id returned; run pull before retrying')}"
             )
             return False
         dest = self._commit(key, op, keep=action == "replace")
@@ -174,10 +182,11 @@ class Engine:
                     return False
             except RemoteError as exc:
                 print(
-                    f"  part  replacement saved; old id {op['old_id']} needs cleanup: {exc}"
+                    f"  {S.bad('part')}replacement saved; "
+                    f"old id {op['old_id']} needs cleanup: {S.dim(exc)}"
                 )
                 return False
-        print(f"  ok    {self.store.rel(dest)} {action}")
+        print(f"  {S.ok()}{self.store.rel(dest)} {S.dim(action)}")
         return True
 
     def add(self, fm, body="", no_push=False, dry_run=False):
@@ -197,7 +206,7 @@ class Engine:
                 path = path.with_name(f"{stem}--{i}.md")
                 i += 1
         write_entry(path, fm, body)
-        print(f"  new   {self.store.rel(path)}")
+        print(f"  {S.ok('new')}{self.store.rel(path)}")
         if no_push:
             return 0
         return 0 if self.push_one(path, fm, body) else 1
@@ -228,13 +237,15 @@ class Engine:
                     op["new_id"] = op["old_id"]
                 else:
                     print(
-                        f"  hold  {op['path']}: update outcome differs; inspect the recovery journal"
+                        f"  {S.warn('hold')}{op['path']}: "
+                        f"{S.dim('update outcome differs; inspect the recovery journal')}"
                     )
                     continue
             elif not op.get("new_id"):
                 if pending_matches[self.record.match_key(op["fm"])] != 1:
                     print(
-                        f"  hold  {op['path']}: multiple pending local records match; resolve manually"
+                        f"  {S.warn('hold')}{op['path']}: "
+                        f"{S.dim('multiple pending local records match; resolve manually')}"
                     )
                     continue
                 candidates = [
@@ -246,14 +257,15 @@ class Engine:
                 ]
                 if len(candidates) != 1:
                     print(
-                        f"  hold  {op['path']}: {len(candidates)} matching remote records; widen pull range or resolve manually"
+                        f"  {S.warn('hold')}{op['path']}: {len(candidates)} matching remote "
+                        f"{S.dim('records; widen pull range or resolve manually')}"
                     )
                     continue
                 op["new_id"] = candidates[0]["id"]
             claimed.add(op["new_id"])
             self.store.operation(key, op)
             self._commit(key, op, keep=op["action"] == "replace")
-            print(f"  adop  recovered {op['new_id']}")
+            print(f"  {S.ok('adop')}{S.dim('recovered')} {op['new_id']}")
         # Legacy fsync files used sync.created without a journal.
         active_paths = {op["path"] for op in self.store.operations().values()}
         for path, fm, body in self.scan()[2]:
@@ -261,7 +273,8 @@ class Engine:
                 continue
             if pending_matches[self.record.match_key(fm)] != 1:
                 print(
-                    f"  hold  {self.store.rel(path)}: multiple pending local records match"
+                    f"  {S.warn('hold')}{self.store.rel(path)}: "
+                    f"{S.dim('multiple pending local records match')}"
                 )
                 continue
             matches = [
@@ -272,7 +285,8 @@ class Engine:
             ]
             if len(matches) != 1:
                 print(
-                    f"  hold  {self.store.rel(path)}: {len(matches)} matching remote records"
+                    f"  {S.warn('hold')}{self.store.rel(path)}: "
+                    f"{S.dim(f'{len(matches)} matching remote records')}"
                 )
                 continue
             found = matches[0]
@@ -306,7 +320,9 @@ class Engine:
             if eid in reserved:
                 continue
             if eid in doomed and not force:
-                print(f"  held  {doomed[eid].get('path', eid)}: deleted locally")
+                print(
+                    f"  {S.warn('held')}{doomed[eid].get('path', eid)}: {S.dim('deleted locally')}"
+                )
                 held += 1
                 continue
             existing = by_id.get(eid)
@@ -314,7 +330,9 @@ class Engine:
             if existing:
                 path, local, body = existing
                 if self.record.dirty(local) and not force:
-                    print(f"  held  {self.store.rel(path)}: locally modified")
+                    print(
+                        f"  {S.warn('held')}{self.store.rel(path)}: {S.dim('locally modified')}"
+                    )
                     held += 1
                     continue
             else:
@@ -338,7 +356,8 @@ class Engine:
                 gone.add(eid)
         self.store.save_index(self.scan()[0], drop=gone)
         print(
-            f"pulled {len(points)} {self.record.kind} records: {changed} saved, {held} held"
+            f"{S.bold('pulled')} {len(points)} {self.record.kind} records: "
+            f"{changed} saved, {held} held"
         )
         return 1 if self.store.operations() or self.scan()[2] else 0
 
@@ -346,18 +365,27 @@ class Engine:
         by_id, new, orphans = self.scan()
         dirty = [item for item in by_id.values() if self.record.dirty(item[1])]
         doomed = self.store.pending_deletes(by_id)
-        for tag, rows in (("new", new), ("edit", dirty), ("hold", orphans)):
+        for tag, colour, rows in (
+            ("new", S.green, new),
+            ("edit", S.yellow, dirty),
+            ("hold", S.yellow, orphans),
+        ):
             for path, fm, _ in rows:
-                print(f"  {tag:5} {self.store.rel(path)} · {self.record.summary(fm)}")
+                print(
+                    f"  {S.tag(colour, tag)}{self.store.rel(path)} "
+                    f"{S.dim('·')} {self.record.summary(fm)}"
+                )
         for eid, meta in doomed.items():
-            print(f"  del   {meta.get('path', eid)}")
+            print(f"  {S.bad('del')}{meta.get('path', eid)}")
         for op in self.store.operations().values():
             print(
-                f"  hold  {op['path']}: {op['action']} {op['state']}; pull to reconcile, push to finish cleanup"
+                f"  {S.warn('hold')}{op['path']}: {op['action']} {op['state']}; "
+                f"{S.dim('pull to reconcile, push to finish cleanup')}"
             )
         print(
-            f"status {len(by_id) - len(dirty)} in sync, {len(dirty)} modified, {len(new)} new, "
-            f"{len(doomed)} deleted, {len(orphans)} awaiting pull, {len(self.store.operations())} pending operations"
+            f"{S.bold('status')} {len(by_id) - len(dirty)} in sync, {len(dirty)} modified, "
+            f"{len(new)} new, {len(doomed)} deleted, {len(orphans)} awaiting pull, "
+            f"{len(self.store.operations())} pending operations"
         )
         return 0
 
@@ -371,10 +399,13 @@ class Engine:
                     if not self._cleanup(key, op):
                         failed += 1
                 except RemoteError as exc:
-                    print(f"  part  {op['path']}: {exc}")
+                    print(f"  {S.bad('part')}{op['path']}: {S.dim(exc)}")
                     failed += 1
             else:
-                print(f"  hold  {op['path']}: run pull to reconcile before pushing")
+                print(
+                    f"  {S.warn('hold')}{op['path']}: "
+                    f"{S.dim('run pull to reconcile before pushing')}"
+                )
                 failed += 1
         by_id, new, orphans = self.scan()
         active = self.store.operations()
@@ -382,7 +413,7 @@ class Engine:
             # The original path may have been renamed while a request was in
             # flight. Until recovery identifies its record, another new file
             # might be that same create, so stop this collection's bulk push.
-            print("push held until pending operations are recovered")
+            print(S.yellow("push held until pending operations are recovered"))
             return 1
         work = new + [item for item in by_id.values() if self.record.dirty(item[1])]
         ok = 0
@@ -393,7 +424,7 @@ class Engine:
                 else:
                     failed += 1
             except (ValueError, RemoteError) as exc:
-                print(f"  FAIL  {self.store.rel(path)}: {exc}")
+                print(f"  {S.bad('FAIL')}{self.store.rel(path)}: {S.dim(exc)}")
                 failed += 1
         doomed = self.store.pending_deletes(self.scan()[0])
         eligible, gone = {}, set()
@@ -405,23 +436,32 @@ class Engine:
                 not meta.get("digest") or meta["digest"] != self.record.digest(remote)
             ):
                 print(
-                    f"  conf  delete {eid}: remote changed or legacy baseline missing; pull --force to restore and review"
+                    f"  {S.bad('conf')}delete {eid}: "
+                    f"{S.dim('remote changed or legacy baseline missing; ')}"
+                    f"{S.dim('pull --force to restore and review')}"
                 )
                 failed += 1
             else:
                 eligible[eid] = meta
         if eligible:
             print(
-                f"{'would delete' if dry_run else 'about to delete'} {len(eligible)} {self.record.kind} records:"
+                f"{S.bold('would delete' if dry_run else 'about to delete')} "
+                f"{len(eligible)} {self.record.kind} records:"
             )
             for eid, meta in eligible.items():
                 print(
-                    f"  del   {meta.get('start', '')} {meta.get('summary', meta.get('name', eid))}"
+                    f"  {S.bad('del')}{meta.get('start', '')} "
+                    f"{meta.get('summary', meta.get('name', eid))}"
                 )
             confirmed = yes
             if not dry_run and not confirmed and sys.stdin.isatty():
                 try:
-                    confirmed = input("delete remotely? [y/N] ").strip().lower() == "y"
+                    confirmed = (
+                        input(f"  {S.yellow('?')} delete remotely? [y/N] ")
+                        .strip()
+                        .lower()
+                        == "y"
+                    )
                 except (EOFError, KeyboardInterrupt):
                     confirmed = False
             if not dry_run:
@@ -429,12 +469,15 @@ class Engine:
                     self.remote.delete(list(eligible))
                     gone.update(eligible)
                 else:
-                    print("deletion held; pass --yes to confirm without a terminal")
+                    print(
+                        S.dim("deletion held; pass --yes to confirm without a terminal")
+                    )
                     failed += len(eligible)
         if not dry_run:
             self.store.save_index(self.scan()[0], drop=gone)
         print(
-            f"{'would push' if dry_run else 'pushed'} {ok} ok, {failed} held or failed"
+            f"{S.bold('would push' if dry_run else 'pushed')} "
+            f"{ok} ok, {failed} held or failed"
         )
         return int(failed > 0)
 
@@ -447,7 +490,7 @@ class Engine:
             for dp in points
         }
         doomed = self.store.pending_deletes(by_id)
-        print(f"range {since} .. {self.clock.today()}")
+        print(S.dim(f"range {since} .. {self.clock.today()}"))
         for eid, (path, fm, _) in by_id.items():
             other = remote.get(eid)
             if other is None:
@@ -458,30 +501,38 @@ class Engine:
                     # pull will reuse a full record fetched by id outside the window.
                     points.append(point)
             if other is None:
-                print(f"  x     {self.store.rel(path)}: gone remotely (kept locally)")
-            elif self.record.digest(fm) != self.record.digest(other):
-                mark = (
-                    "!"
-                    if self.record.dirty(fm) and self.conflicts(fm, other)
-                    else "*"
-                    if self.record.dirty(fm)
-                    else ">"
+                print(
+                    f"  {S.bad('x')}{self.store.rel(path)}: "
+                    f"{S.dim('gone remotely (kept locally)')}"
                 )
-                print(f"  {mark:5} {self.store.rel(path)}")
+            elif self.record.digest(fm) != self.record.digest(other):
+                mark, colour = (
+                    ("!", S.red)
+                    if self.record.dirty(fm) and self.conflicts(fm, other)
+                    else ("*", S.yellow)
+                    if self.record.dirty(fm)
+                    else (">", S.green)
+                )
+                print(f"  {S.tag(colour, mark)}{self.store.rel(path)}")
                 for key, mine, theirs in self.record.diff(fm, other):
-                    print(f"         {key}: {mine} (here) vs {theirs} (remote)")
+                    print(S.dim(f"         {key}: {mine} (here) vs {theirs} (remote)"))
         for eid, fm in remote.items():
             if eid not in by_id and eid not in doomed:
                 print(
-                    f"  >     {self.record.time(fm)} {self.record.summary(fm)}: remote only"
+                    f"  {S.ok('>')}{self.record.time(fm)} "
+                    f"{self.record.summary(fm)}: {S.dim('remote only')}"
                 )
         self.status()
         if not (pull or push):
             if not sys.stdin.isatty():
-                print("pass --pull and/or --push to act")
+                print(S.dim("pass --pull and/or --push to act"))
                 return 0
             try:
-                choice = input("1 pull / 2 push / 3 both / n nothing: ").strip()
+                choice = input(
+                    f"  {S.yellow('?')} "
+                    f"{S.bold('1')} pull / {S.bold('2')} push / "
+                    f"{S.bold('3')} both / {S.bold('n')} nothing: "
+                ).strip()
             except (EOFError, KeyboardInterrupt):
                 return 0
             pull, push = choice in ("1", "3"), choice in ("2", "3")

@@ -2,6 +2,7 @@
 
 import sys
 
+from healthsync import style as S
 from healthsync.common import number, tidy_numbers
 
 
@@ -47,27 +48,31 @@ def clone(engine, args):
             latest[name] = (path, fm)
     rows = sorted(latest.values(), key=lambda item: item[1]["start"], reverse=True)[:10]
     if not rows:
-        print(f"no local entry matching {args.keyword!r}")
+        print(S.dim(f"no local entry matching {args.keyword!r}"))
         return 1
     for i, (_, fm) in enumerate(rows, 1):
         sv = fm.get("serving", {})
+        amount_text = sv.get("amount", 1)
+        serving = f"{amount_text} {sv.get('unit', 'serving')}"
+        index = f"{i:2}"
         print(
-            f"  {i:2} {fm['start'][:16]} {engine.record.summary(fm)} · {sv.get('amount', 1)} {sv.get('unit', 'serving')}"
+            f"  {S.bold(index)} {S.dim(fm['start'][:16])} "
+            f"{engine.record.summary(fm)} {S.dim('·')} {S.dim(serving)}"
         )
     pick, amount = args.index, args.amount
     if (pick is None or amount is None) and not sys.stdin.isatty():
-        print("pass --index N --amount X to clone without a terminal")
+        print(S.dim("pass --index N --amount X to clone without a terminal"))
         return 0
     try:
         if pick is None:
-            pick = int(input(f"which? [1-{len(rows)}] "))
+            pick = int(input(f"  {S.yellow('?')} which? [1-{len(rows)}] "))
         if not 1 <= pick <= len(rows):
             raise ValueError("selection is out of range")
         src_path, src = rows[pick - 1]
         sv = src.get("serving", {})
         original_amount = number(sv.get("amount", 1), "amount")
         if amount is None:
-            raw = input(f"amount? [{original_amount:g}] ").strip()
+            raw = input(f"  {S.yellow('?')} amount? [{original_amount:g}] ").strip()
             amount = float(raw) if raw else original_amount
     except (EOFError, KeyboardInterrupt):
         return 0
@@ -106,18 +111,33 @@ def total(engine, args):
         key=lambda fm: fm["start"],
     )
     if not rows:
-        print(f"no entries for {day}; run hsync food pull --days 7")
+        print(S.dim(f"no entries for {day}; run hsync food pull --days 7"))
         return 1
     kcal = carbs = fat = protein = 0
     for fm in rows:
         p = (fm.get("nutrients") or {}).get("PROTEIN", 0)
+        dash = "—"
+        protein_text = (
+            S.green(f"{p:>5g}g protein") if p else S.dim(f"{dash:>5}g protein")
+        )
+        meal_name = fm.get("meal", "")
+        meal = S.cyan(f"{meal_name:<9}")
+        calories = S.yellow(f"{tidy_numbers(fm['kcal']):>5g} kcal")
+        name = str(fm.get("name", ""))[:46]
         print(
-            f"  {fm['start'][11:16]} {fm.get('meal', ''):9} {engine.record.summary(fm)} · {p:g}g protein"
+            f"  {S.dim(fm['start'][11:16])}  {meal} {name:<46} "
+            f"{calories}  {protein_text}"
         )
         kcal += fm["kcal"]
         carbs += fm.get("carbs_g", 0)
         fat += fm.get("fat_g", 0)
         protein += p
-    print(f"{day}: {kcal:g} kcal across {len(rows)} entries")
-    print(f"protein {protein:.1f}g · carbs {carbs:g}g · fat {fat:g}g")
+    print(
+        f"  {S.bold(day)}  {S.yellow(S.bold(f'{kcal:g} kcal'))} "
+        f"{S.dim(f'across {len(rows)} entries')}"
+    )
+    print(
+        f"  {S.green(f'protein {protein:.1f}g')} {S.dim('·')} "
+        f"{S.dim(f'carbs {carbs:g}g · fat {fat:g}g')}"
+    )
     return 0

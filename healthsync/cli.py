@@ -8,6 +8,7 @@ import sys
 from zoneinfo import ZoneInfoNotFoundError
 
 from healthsync import food_commands
+from healthsync import style as S
 from healthsync.common import Clock, number
 from healthsync.config import resolve
 from healthsync.google_health import GoogleHealth, RemoteError
@@ -172,7 +173,7 @@ def parser(legacy=False):
 def run(engine, cfg, args):
     cmd = args.cmd
     if cmd == "config":
-        print(f"config {cfg.source or '(defaults)'}")
+        print(f"{S.bold('config')} {cfg.source or S.dim('(defaults)')}")
         for key, value in (
             (f"{cfg.kind}_dir", cfg.directory),
             ("index", cfg.index),
@@ -180,7 +181,7 @@ def run(engine, cfg, args):
             ("timezone", cfg.timezone),
             ("weight_unit", cfg.weight_unit),
         ):
-            print(f"  {key:12} {value}")
+            print(f"  {S.dim(f'{key:<12}')} {value}")
         return 0
     if cmd == "pull":
         return engine.pull(args.days, args.limit, args.force)
@@ -219,9 +220,10 @@ def run(engine, cfg, args):
         ]
         for fm in sorted(rows, key=lambda fm: fm["time"]):
             print(
-                f"{fm['time']}  {engine.record.summary(fm, args.unit or cfg.weight_unit)}"
+                f"  {S.dim(fm['time'][:16])}  "
+                f"{S.bold(engine.record.summary(fm, args.unit or cfg.weight_unit))}"
             )
-        print(f"{len(rows)} measurements")
+        print(f"{S.bold(len(rows))} measurements")
         return 0
     raise ValueError(f"unknown command {cmd}")
 
@@ -245,7 +247,7 @@ def main(argv=None, legacy=False):
                 Clock(cfg.timezone),
             )
             if aggregate:
-                print(f"\n{cfg.kind}:")
+                print(f"\n{S.bold(cfg.kind + ':')}")
             if args.cmd == "config" or (args.cmd == "add" and args.dry_run):
                 rc = max(rc, run(engine, cfg, args))
             else:
@@ -260,10 +262,11 @@ def main(argv=None, legacy=False):
         RemoteError,
         ZoneInfoNotFoundError,
     ) as exc:
-        print(f"{'fsync' if legacy else 'hsync'}: {exc}", file=sys.stderr)
+        print(S.red(f"{'fsync' if legacy else 'hsync'}: {exc}"), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print(
-            "interrupted; pending operations are retained for recovery", file=sys.stderr
+            S.yellow("interrupted; pending operations are retained for recovery"),
+            file=sys.stderr,
         )
         return 130

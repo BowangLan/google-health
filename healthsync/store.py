@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from healthsync import style as S
 from healthsync.common import tidy_numbers, write_atomic
 
 
@@ -96,7 +97,10 @@ class Store:
         target = self.entry_path(fm)
         if path != target:
             if target.exists():
-                print(f"  keep  {self.rel(path)}; destination already exists")
+                print(
+                    f"  {S.warn('keep')}{self.rel(path)}; "
+                    f"{S.dim('destination already exists')}"
+                )
                 return path
             target.parent.mkdir(parents=True, exist_ok=True)
             path.rename(target)
@@ -219,7 +223,9 @@ class Store:
                 backup = legacy.with_name(f".fsync-index.migrated-{i}.json")
                 i += 1
             legacy.rename(backup)
-            print(f"migrated legacy food index to {self.index}; backup: {backup}")
+            print(
+                S.dim(f"migrated legacy food index to {self.index}; backup: {backup}")
+            )
 
     def pending_deletes(self, by_id):
         return {
