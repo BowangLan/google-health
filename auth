@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Google Health login, status, and granted scopes.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTH_GHEALTH="${GHEALTH:-$SCRIPT_DIR/google-health-cli/ghealth}"
+
+if [[ $# -gt 1 ]]; then
+  echo "Usage: ./auth [login|status|scopes]" >&2
+  exit 2
+fi
+
+case "${1:-login}" in
+  login)
+    exec "$AUTH_GHEALTH" auth login \
+      --scopes nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly
+    ;;
+  status)
+    exec "$AUTH_GHEALTH" auth status
+    ;;
+  scopes)
+    "$AUTH_GHEALTH" auth export | jq '.scopes'
+    ;;
+  -h|--help)
+    echo "Usage: ./auth [login|status|scopes] (default: login)"
+    ;;
+  *)
+    echo "Usage: ./auth [login|status|scopes]" >&2
+    exit 2
+    ;;
+esac

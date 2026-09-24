@@ -3,8 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Compatibility entrypoint: fsync COMMAND is hsync food COMMAND."""
 from healthsync.cli import main
 
 if __name__ == "__main__":
-    raise SystemExit(main(legacy=True))
+    raise SystemExit(main())

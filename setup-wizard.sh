@@ -289,22 +289,24 @@ else
 fi
 pause "Press Enter to continue"
 
-stage "Auth Platform: nutrition scopes"
-say "Declare the scopes the app may request: nutrition read AND write."
+stage "Auth Platform: food and weight scopes"
+say "Declare nutrition and health metrics scopes, each with read AND write."
 open_url "https://console.cloud.google.com/auth/scopes?project=${GCP_PROJECT_ID}"
 step "Click ADD OR REMOVE SCOPES."
 step "In the filter box, search: googlehealth"
-step "Tick BOTH of these, then UPDATE and SAVE:"
+step "Tick all FOUR of these, then UPDATE and SAVE:"
 note "    .../auth/googlehealth.nutrition.readonly"
 note "    .../auth/googlehealth.nutrition.writeonly"
+note "    .../auth/googlehealth.health_metrics_and_measurements.readonly"
+note "    .../auth/googlehealth.health_metrics_and_measurements.writeonly"
 warn "writeonly is the one that lets you log food. Do not skip it."
 say ""
 say "A 'Verification required' dialog will pop up when you add these."
 step "Dismiss it. Do not submit anything."
 note "It is the entry point to start verification, not a gate. Verification is"
 note "not required in Testing, nor for personal use at all."
-step "Then reload the page and confirm BOTH scopes are still listed."
-pause "Press Enter once both scopes are saved and still showing"
+step "Then reload the page and confirm all four scopes are still listed."
+pause "Press Enter once all four scopes are saved and still showing"
 
 # ── 8 ─────────────────────────────────────────────────────────────────────
 stage "Create a Desktop OAuth client"
@@ -330,7 +332,7 @@ say ""
 note "Running:"
 note "  ghealth setup --project-id $GCP_PROJECT_ID \\"
 note "      --client-secret <your json> --skip-enable-api \\"
-note "      --scopes nutrition.readonly,nutrition.writeonly"
+note "      --scopes nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly"
 say ""
 warn "A browser window will open. Pick your Google account and accept."
 warn "On the 'Google hasn't verified this app' screen: Advanced -> Go to ..."
@@ -342,13 +344,13 @@ if [[ -n "${CLIENT_SECRET_PATH:-}" ]]; then
     --project-id "$GCP_PROJECT_ID" \
     --client-secret "$CLIENT_SECRET_PATH" \
     --skip-enable-api \
-    --scopes "nutrition.readonly,nutrition.writeonly" || \
+    --scopes "nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly" || \
     warn "Setup exited non-zero. Re-run it by hand to see the error."
 else
   "$GHEALTH_SRC/ghealth" setup \
     --project-id "$GCP_PROJECT_ID" \
     --skip-enable-api \
-    --scopes "nutrition.readonly,nutrition.writeonly" || \
+    --scopes "nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly" || \
     warn "Setup exited non-zero. Re-run it by hand to see the error."
 fi
 
@@ -357,7 +359,8 @@ say "Checking which scopes the token actually carries:"
 "$GHEALTH_SRC/ghealth" auth export 2>/dev/null | jq -r '.scopes[]?' || \
   warn "Could not read scopes; is login complete?"
 say ""
-warn "Confirm 'nutrition.writeonly' appears above. If it does not, the write"
+warn "Confirm nutrition and health_metrics_and_measurements read/write scopes appear."
+warn "If either write scope is missing, the corresponding write"
 warn "path will 403 and you need to re-run: ghealth auth login --scopes ..."
 say ""
 say "Reading your existing food logs (may legitimately be empty):"

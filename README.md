@@ -1,479 +1,298 @@
 # Google Health on this Mac
 
-CLI access to Google Health, aimed at logging and managing food entries.
-
-## Run this
+`hsync` synchronizes food and weight records between Google Health and editable
+Markdown files. Each collection has its own directory, index, and pending changes.
+The Markdown body is private; only supported frontmatter fields are sent remotely.
 
 ```sh
-./setup-wizard.sh
+./hsync food add lunch "Chicken burrito" 650 -c 72 -f 24 -p 38
+./hsync weight add 175 --unit lb
+./hsync weight pull --days 90
+./hsync weight list --days 30 --unit lb
+./hsync weight sync
+./hsync status --all
 ```
 
-Nine stages. It installs Go, builds Google's `ghealth` CLI into this folder, walks
-you through the Cloud Console pages, and finishes by authenticating and reading
-your food logs back. Stop with Ctrl-C any time and re-run — captured values are
-kept in `.env` and offered as defaults.
+`./fsync COMMAND` remains an alias for `./hsync food COMMAND`.
+`./flog ...` remains shorthand for `./fsync add ...`. Existing food files and
+change-detection hashes remain compatible. No food directory migration is needed.
 
-## What ends up where
+## Setup and authorization
 
-| Path | What |
-| --- | --- |
-| `setup-wizard.sh` | The guided setup |
-| `flog` | Shorthand for `fsync add` |
-| `fsync` | add, clone, sync, pull, status, push, tidy, total, config |
-| `fsync.toml` | Optional config; `fsync.toml.example` is the template |
-| `food/` | One Markdown file per food entry |
-| `.env` | Project ID, client secret path, publishing status |
-| `docs/` | Research writeups and the sync-flow diagrams |
-| `google-health-cli/` | Cloned repo + built `ghealth` binary |
-| `~/.config/ghealth/` | OAuth client secret and tokens (mode 0600) |
+Run `./setup-wizard.sh` on a fresh clone. It builds Google's `ghealth` CLI,
+walks through Cloud Console setup, and authenticates. Both entrypoints use `uv`
+to run Python with the declared PyYAML dependency; no environment activation is
+needed. Keep the `healthsync/` package alongside the scripts.
 
-### What git tracks
+The OAuth client must be a **Desktop app**. `ghealth` uses a loopback redirect;
+a Web application client will not work. The wizard retains project settings
+in `.env`, and `ghealth` keeps its credentials under `~/.config/ghealth/`.
 
-Only the tooling: `fsync`, `flog`, `setup-wizard.sh`, `README.md`, `docs/`.
-
-**Your food logs are not committed.** `food/` is health data and stays out of
-the repo; Google Health holds the canonical copy and `fsync pull` rebuilds the
-folder from it. The `.fsync-index.json` state file lives inside `food/` and goes
-with it. Also untracked: `.env`, any `client_secret*.json`, and the
-`google-health-cli/` clone — all of them either secret or machine-local, and all
-restored by `./setup-wizard.sh`.
-
-On a fresh clone: run the wizard, then `./fsync pull --days 7`.
-
-## Two things that decide whether this works
-
-**Pick "Desktop app" for the OAuth client.** `ghealth` authenticates over a
-loopback port. A Web application client fails.
-
-**Publish the app, and don't submit it for verification.** In *Testing*, refresh
-tokens expire after 7 days, which kills any daily logging habit. Publishing to
-*In production* removes that.
-
-Every Google Health scope is Restricted, which normally means OAuth verification
-plus a CASA third-party security assessment. You need neither: Google exempts
-personal use — "apps with only yourself or a handful of known users" can skip
-verification. Publish unverified and you pay two prices, both irrelevant to a
-single-user setup: a "Google hasn't verified this app" screen you click through
-once, and a hard cap of 100 total users.
-
-The 7-day expiry is a property of *Testing* status, not of being unverified — so
-publishing unverified gets you persistent tokens.
-
-## The gap you're working around
-
-The API can write food logs. The CLI can't. `nutrition-log` is registered in
-`pkg/types/registry.go` with `list, get, rollup, daily-rollup, reconcile` and no
-`create` — only exercise, sleep, weight, body-fat, height and oxygen-saturation
-are writable.
-
-So reads go through `ghealth` and writes go through `fsync`, which borrows
-`ghealth`'s access token and calls the API itself. The wizard requests
-`nutrition.writeonly` via `--scopes`, an unvalidated passthrough, so the token
-can write even though the CLI won't.
-
-## Logging a meal — `fsync add`
+For an existing food-only installation, add the health metrics scopes in
+Cloud Console's OAuth data-access page, then authenticate again:
 
 ```sh
-./fsync add lunch "Chicken burrito" 650 -c 72 -f 24 -p 38
+./auth
+```
+
+Check authentication with `./auth status`, or list granted scopes with
+`./auth scopes` (requires `jq`). `./auth` and `./auth login` both start login.
+
+The health metrics scopes cover weight. Keeping nutrition scopes in the request
+preserves food access. `hsync` borrows and refreshes `ghealth`'s token. A missing
+scope produces an authorization error; it does not silently enable access.
+
+The original setup guidance recommends publishing a personal OAuth app as
+unverified rather than leaving it in Testing, where refresh tokens expire after
+seven days. See the [original setup research](docs/google-health-food-logging.html)
+for the personal-use verification exemption and its limitations.
+
+## Commands
+
+Both `food` and `weight` support:
+
+| Command | Behavior |
+| --- | --- |
+| `add` | Save a file, then push only that new record |
+| `pull --days N` | Fetch all pages in a date window; retain local edits and deletions |
+| `status` | Show local changes, pending deletions, and recovery operations; no remote reads |
+| `push --dry-run` | Preview changes and check existing records remotely; no record writes |
+| `push` | Send this collection's changes; confirm file deletions before deleting remotely |
+| `sync` | Compare both sides, then choose pull, push, both, or nothing |
+| `tidy` | Derive file locations from their timestamps; local only |
+| `config` | Show resolved paths, timezone, and units |
+
+Top-level shared commands require `--all`, for example `hsync sync --all` or
+`hsync pull --all --days 30`. Each collection is processed separately and reported
+separately. This is not a transaction across food and weight. Without a terminal,
+`sync` only displays the comparison unless `--pull` and/or `--push` is supplied.
+Pull runs before push when both are selected.
+
+`--limit` is a list page size, not a total-record cap. Pagination failure aborts
+the read rather than treating an incomplete result as remote deletions.
+
+## Food
+
+```sh
 ./fsync add anytime "Egg tart" 200 -u piece
-./fsync add -t 08:15 breakfast "Matcha latte" 240 -c 35 -p 6 -s 28 -u cup
-./fsync add dinner "Steak bowl" 580 --no-push      # write the file, send later
-./fsync add snack "Test" 10 --dry-run              # show the payload, send nothing
+./fsync add breakfast "Matcha latte" 240 -c 35 -p 6 -s 28 -t 08:15
+./hsync food add anytime "Soup" 180 --sodium-mg 480 --date 2026-09-20
+./hsync food add dinner "Steak bowl" 580 --no-push
+./hsync food add snack "Test" 10 --dry-run
+./hsync food clone "sun cake" --index 1 --amount 2
+./hsync food total yesterday
 ```
 
-Meals: `breakfast` `lunch` `dinner` `snack` `anytime`. Options: `-c` carbs,
-`-f` fat, `-p` protein, `-s` sugar, `-d` fibre, `-u` serving unit, `-a` amount,
-`-t HH:MM` to backdate to earlier today, `--note` for the file body.
+Meals are `breakfast`, `lunch`, `dinner`, `snack`, and `anytime`.
+`-c`, `-f`, `-p`, `-s`, and `-d` set carbohydrate, fat, protein, sugar,
+and fibre in grams. `--sodium-mg` accepts milligrams and converts them to grams
+in the file. `-a` and `-u` describe the serving amount and unit.
 
-`add` writes the file first, then pushes it — so an entry logged this way is an
-ordinary file you can edit, annotate, and re-push like any other.
+**All nutrition values are totals for the portion eaten.** Serving amount does
+not multiply them. `clone` explicitly rescales calories, macros, and every
+nutrient when its amount changes. It searches local files, keeps the latest
+entry per distinct name, and offers up to ten matches. Pull a wider window to
+find older foods. Identified foods retain their catalog reference; Google may
+recompute their nutrition from that reference and the serving amount.
 
-`./flog …` still works; it is a shim onto `fsync add`.
+```yaml
+---
+id: 'example-id'
+meal: LUNCH
+name: Chicken burrito
+start: '2026-09-24T12:30:00-07:00'
+end: '2026-09-24T12:31:00-07:00'
+kcal: 650
+carbs_g: 72
+fat_g: 24
+nutrients:
+  PROTEIN: 38
+  SODIUM: 0.48
+serving:
+  amount: 1
+  unit: burrito
+sync:
+  pulled: '2026-09-24T13:00:00-07:00'
+  digest: example
+---
 
-## File-backed sync — `fsync`
+Private notes.
+```
 
-Every food entry is one Markdown file in `food/`, with YAML frontmatter holding
-the data and the body free for notes that never leave this machine.
+A manually authored food requires `meal`, `name`, `start`, and `kcal`.
+Omit `id` for a new record. Optional `food_ref` preserves a Google catalog
+reference. `source` is read-only metadata. A missing end time becomes one minute
+after start when validated for a write.
+
+Food edits still use **create, then delete**, because nutrition-log PATCH did not
+work in the original API probes. The replacement gets a new ID. Create failure
+leaves the old record intact. An incomplete replacement is now journaled: a later
+push finishes deletion of the old ID without creating another replacement.
+
+## Weight
 
 ```sh
-./fsync clone "sun cake"   # copy a past entry at a new amount
-./fsync sync               # diff both sides, then choose
-./fsync pull --days 7      # fetch remote entries into ./food/
-./fsync status             # what is new, changed, or in sync
-./fsync push --dry-run     # show what would be sent
-./fsync push               # create new entries, update changed ones
-./fsync push --force       # push an edit that also changed remotely
-./fsync tidy               # file entries into their day folders
-./fsync total yesterday    # calories and protein per entry, plus daily macros
-./fsync config             # where every path resolved to, and why
+./hsync weight add 79.4 --unit kg
+./hsync weight add 175 --unit lb --date 2026-09-23 --at 08:00
+./hsync weight add 79.4 --note "Private context" --remote-note "Morning reading"
+./hsync weight add 79.4 --no-push
+./hsync weight list --days 90 --unit lb
 ```
 
-### `clone` — log something you have eaten before
+Files store kilograms in `weight_kg`; `--unit` and `weight_unit` control entry and
+display. Pound conversion uses exactly 0.45359237 kilograms per pound. Conversion
+is normalized to nine decimal places in kilograms so repeated pull/push cycles
+do not produce floating-point edits. Multiple measurements per day, including
+within the same minute, remain separate records.
 
-Search past entries by name, pick one, give the portion:
+```yaml
+---
+id: 'example-id'
+time: '2026-09-24T08:00:00-07:00'
+weight_kg: 79.4
+remote_notes: Morning reading
+sync:
+  pulled: '2026-09-24T09:00:00-07:00'
+  digest: example
+---
 
-```
-$ ./fsync clone "sun cake"
-    1  09-22 14:36  TYT SUN CAKE     2 piece    400 kcal
-    2  09-21 18:30  Sun cake         2 piece    400 kcal
-
-  ? which? [1-2] 1
-  ? amount? [2 piece] 1
-  scaled ×0.5 from 2 piece
-  TYT SUN CAKE  200 kcal · carbs 30 · fat 8 · protein 3 · 1 piece
-   new  2026-09-23/1646--tyt-sun-cake.md
-```
-
-**The amount rescales every number**, because each one is a total for the
-portion and not a per-unit rate. Half the pieces is half the calories, half the
-carbs, half of every entry under `nutrients` — including the ones `fsync add`
-has no flag for, like sodium and cholesterol, which is the main reason to clone
-rather than retype. Press enter to keep the original portion and copy it
-verbatim.
-
-One row per distinct name, most recent first, ten at most; a food you log often
-appears once, as you last logged it. The keyword is a case-insensitive substring
-of the name. Matching searches every local file, so it only finds what you have
-pulled — widen with `fsync pull --days N` if something older is missing.
-
-The clone is logged at the current time with the source's meal type, and pushed
-like `fsync add`. `--no-push` writes the file only, `--index N --amount X` skip
-both prompts for scripts. The file body records where it came from.
-
-An identified entry keeps its `food_ref`, so the clone still points at the same
-catalog food. Google may recompute the macros from the catalog and your amount
-rather than honouring the scaled numbers — a `pull` afterwards will show what it
-actually stored.
-
-### `sync` — see the difference first, then choose
-
-`pull` and `push` each act immediately in one direction. `sync` shows you both
-sides first and asks:
-
-```
-range 2026-09-21 .. 2026-09-23  (3 days, from the oldest day folder)
-   *  2026-09-23/0900--venti-iced-matcha-latte--…md  edited here; push replaces it
-   >  2026-09-22 Chicken Egg Sandwich  450 kcal · only in Google Health
-   <  2026-09-23/new-thing.md  new here; never pushed
-   !  2026-09-22/0800--ube-donut--…md  changed on BOTH sides
-         kcal: 285  (here)  vs  280  (remote)
-   x  2026-09-21/1953--oatmeal--…md  gone from Google Health
-   -  2026-09-22/1815--egg-tart--…md  deleted here; push removes it
-
-  1 day folder(s) to create: 2026-09-22
-
-diff 11 to pull, 2 to push, 1 conflicted
-
-  1  pull   11 from Google Health
-  2  push   2 from here (1 conflicted, will be refused)
-  3  both
-  n  nothing
-
-  ? which? [1/2/3/n]
+Private context stays on this machine.
 ```
 
-| | |
-| --- | --- |
-| `>` | only in Google Health, or changed there — `pull` brings it here |
-| `<` | new here, never pushed |
-| `*` | edited here; `push` replaces it (new id) |
-| `!` | **both sides changed since the last sync** — neither direction is safe |
-| `x` | in range, but Google Health no longer has it |
-| `-` | file deleted here; `push` removes it remotely |
+A new weight record requires `time` and `weight_kg`, with no `id`. Google stores
+an instantaneous `sampleTime`, a `weightGrams` number, and optional `notes`.
+`remote_notes` maps to those notes; the body remains private.
+[Google's weight schema](https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints#Weight)
 
-**The range is the oldest day folder through today**, not a `--days` count —
-so it covers everything you have on disk. Folders whose names aren't
-`YYYY-MM-DD` are ignored rather than fatal, so a stray folder can't silently
-widen it. With no day folders at all, the range is just today.
+Weight edits use PATCH and retain their ID, matching the installed Google CLI's
+weight update operation. A failed PATCH does not fall back to replacement.
+The request format follows Google's
+[update reference](https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints/patch).
 
-Remote days you have no folder for are created as the entries are written;
-`sync` names them before you decide.
+## Dates and files
 
-Only `1`/`2`/`3` act. Anything else, including Ctrl-D, does nothing. `--pull`
-and `--push` skip the prompt for scripts — without a terminal and without
-those flags, `sync` prints the diff and stops. **Pull runs before push**, which
-is deliberate: `pull` refuses to overwrite a file you have edited, so your
-pending changes survive it and go out on the push.
+Default timezone: `America/Los_Angeles`. `add` defaults to the current date and
+time. Both record types accept `--date today|yesterday|YYYY-MM-DD` and `--at HH:MM`.
+An earlier date without a time uses noon and records that it is a placeholder in
+the private body. Dates use the timezone's correct seasonal UTC offset.
+Timestamps authored by hand must include an offset; quote them in YAML.
 
-A **conflict** (`!`) `sync` will not resolve for you: it shows the differing
-fields and stops. Neither default is safe — `pull --force` takes theirs and
-loses yours, `push --force` takes yours and deletes theirs. Choosing push at the
-prompt is not a way round it; `push` refuses conflicted entries itself and says
-so. `x` is informational: detecting remote deletions is new to `sync`, and
-`status` still can't see them.
-
-`sync` hands the window it already fetched to `pull`, so choosing `1` or `3`
-does not query the API twice.
-
-### Layout
-
-One folder per day, one file per entry:
-
-```
+```text
 food/
   .fsync-index.json
-  2026-09-21/
-    0953--grande-iced-matcha-latte-with-oatmilk-and-pu--4238894257679590105.md
-    1223--braised-pork-rice--3370798161334383301.md
-  2026-09-22/
-    0800--chicken-egg-sandwich--5570793513325366600.md
-    1256--quinoa-and-vegetable-salad--4600245692831079784.md
-  2026-09-23/
-    0900--venti-iced-matcha-latte--2238625165137221493.md
+  .food-operations.json       # created when needed
+  2026-09-24/1230--chicken-burrito--<id>.md
+weight/
+  .hsync-index.json
+  .weight-operations.json     # created when needed
+  2026-09-24/0800--weight--<id>.md
 ```
 
-The day folder is `YYYY-MM-DD`, the file is `HHMM--slug--id.md` (a new entry has
-no id until it is pushed). **Both are derived from the entry's own `start`
-field, and neither is ever read back.** Move or rename a file however you like;
-`tidy` puts it back where its content says it belongs, and a date edited in the
-frontmatter moves the file to the right day on the next `push` or `tidy`.
+Paths are decorative; fields inside the files determine their identity and date.
+Move or rename a record anywhere inside its collection, then run `tidy` to restore
+its normal location. New same-minute records receive a filename suffix until
+Google assigns an ID. The two collections must use separate, non-nested folders.
 
-`fsync` is a single self-contained script. Its dependencies are declared inline
-and `uv` fetches them on first run — nothing to install or activate.
+## Configuration
 
-### Moving the food folder
-
-`food/` sits next to the script by default. To keep your entries somewhere
-else — a synced folder, a notes vault, a separate private repo — copy the
-template and set one key:
-
-```sh
-cp fsync.toml.example fsync.toml
-```
+Copy `hsync.toml.example` to `hsync.toml`:
 
 ```toml
 food_dir = "~/Dropbox/health/food"
+weight_dir = "~/Dropbox/health/weight"
+timezone = "America/Los_Angeles"
+weight_unit = "kg"
 ```
 
-Three ways in, highest priority first:
+Configuration discovery checks the repository's `hsync.toml`, then `fsync.toml`,
+then `~/.config/hsync/config.toml`, then `~/.config/fsync/config.toml`.
+The first existing file is used. `--config`, `HSYNC_CONFIG`, or legacy
+`FSYNC_CONFIG` can name a specific file.
+
+Directory precedence is command-line flag, `HSYNC_FOOD_DIR`/`HSYNC_WEIGHT_DIR`,
+legacy `FSYNC_FOOD_DIR` for food, configuration, then defaults. Common flags work
+before or after the record type or command. Paths in configuration are relative
+to that file; command-line paths are relative to the current directory.
+
+`ghealth` sets the binary path; `GHEALTH` overrides it. Index defaults are inside
+each collection. Optional `food_index` and `weight_index` override them; legacy
+`index` applies only to food. Never share an index between collections or point
+an existing index at an unrelated empty directory: missing files represent
+pending remote deletions. Indexes record their collection and directory to
+catch accidental reuse. To move a collection, move its entire folder with the
+index and recovery journal, then change its configured directory.
+
+Local commands lock the collection to prevent simultaneous `hsync` and `fsync`
+processes from issuing duplicate writes. Locks coordinate processes on this Mac;
+they do not coordinate separate Macs through a cloud-synced folder.
+
+## Conflicts, deletions, and recovery
+
+`pull` retains locally edited records. `pull --force` takes the remote version
+and can restore a file deleted locally; the private body is preserved for existing
+files. `push` checks records by ID, so changing a date cannot evade conflict
+checking. A remote record that has disappeared is not silently recreated.
+
+For conflicting edits, inspect the differing fields, then explicitly choose
+`pull --force` to take remote or `push --force` to take local. A force push still
+cannot edit a nonexistent remote ID; restore it or author a new record without
+an ID after reviewing the deletion. Agents should report conflicts rather than
+choosing a side automatically.
+
+Delete a file, then `push` to delete remotely. Pending deletions survive pulls
+and declined confirmation. `--yes` confirms deletion without an interactive
+prompt. If the remote record changed since its last sync, deletion is refused
+unless explicitly forced. Old index tombstones without a baseline digest are
+also refused: restore them with `pull --force`, review, then delete again.
+Unreadable files, duplicate IDs, and corrupt indexes stop sync before mutations.
+
+`sync` reports records gone remotely and retains their local files. This permits
+review and keeps private notes; remote deletion does not automatically erase them.
+After deleting such a local file, push clears the already-resolved tombstone.
+
+Every create, edit, and replacement is journaled before the remote call. If a
+create may have succeeded but no ID was saved, **run `pull` before retrying**.
+Recovery requires a unique match on both sides and holds ambiguous matches. Widen `--days`
+when recovering an older record. Never clear recovery state merely to retry a
+create: that can duplicate a remote record.
+
+Keep pending-operation files in place until recovery completes. Bulk push pauses
+while unresolved operations remain; a newly requested `add` still targets only
+its own record.
+
+An incomplete food replacement keeps the new record and old ID in its journal.
+Pull can recover the new ID; push retries only the old-ID cleanup, checking first
+that the old record has not changed. Pending/uncertain weight updates reconcile
+when a read matches the submitted values. If no unique outcome can be confirmed,
+the command stays held and requires manual review of the journal and remote data.
+
+`add --dry-run` only prints the payload. It creates no file. `push --dry-run`
+reads remote records for conflict checks, but changes neither records nor indexes.
+
+## Privacy and development
+
+Food files, weight files, indexes, journals, configuration, and credentials remain
+untracked. The index retains pending local deletions; journals retain incomplete
+operations. Keep those files with their collection. Google can rebuild synced
+frontmatter, but cannot recover private notes or entries never pushed.
+
+Implementation:
+
+- `healthsync/cli.py`: parsing and command dispatch.
+- `healthsync/config.py`: independent collection configuration.
+- `healthsync/store.py`: Markdown, indexes, locks, and journals.
+- `healthsync/sync.py`: shared conflict and reconciliation policy.
+- `healthsync/google_health.py`: OAuth, paginated reads, and REST mutations.
+- `healthsync/records/`: food and weight schemas and transformations.
+- `healthsync/food_commands.py`: food entry, cloning, and daily totals.
+
+Run the isolated tests; they use temporary files and a fake remote, never live
+health writes:
 
 ```sh
-./fsync pull --food-dir ~/Dropbox/health/food   # one-off
-FSYNC_FOOD_DIR=~/Dropbox/health/food ./fsync pull
-                                                # this shell
-food_dir = "~/Dropbox/health/food"              # fsync.toml, permanent
+uv run --with pyyaml python -m unittest discover -s tests -v
 ```
 
-The flag works in either position — `fsync --food-dir X pull` and
-`fsync pull --food-dir X` are the same. `fsync config` prints what actually
-resolved, which is the fastest way to check a config is being read at all:
-
-```
-config    /Users/you/google-health/fsync.toml
-  food_dir  /Users/you/Dropbox/health/food  ok
-  ghealth   /Users/you/google-health/google-health-cli/ghealth  ok
-  index     /Users/you/Dropbox/health/food/.fsync-index.json  ok
-```
-
-`fsync.toml` also takes `ghealth` (if you installed Google's CLI yourself
-rather than letting the wizard build one here) and `index`. Paths in the file
-are relative to the file; paths on the command line are relative to you.
-
-**The index lives inside the food folder.** `.fsync-index.json` records which
-remote ids have been seen, so a file that disappears reads as a deletion. It
-sits *in* `food_dir`, not beside it: two food folders sharing a parent would
-otherwise share one index, and each would report every entry of the other as
-`del`, offering to wipe them from Google Health. Pointing `--food-dir` at a new
-empty folder therefore gets a fresh index, which is the point. An index left at
-the old location beside `food_dir` is moved in on the next run, once, and the
-move is printed. Set `index` explicitly only if you want it somewhere else.
-
-Your config is not committed; `fsync.toml.example` is.
-
-### The file
-
-```yaml
----
-id: '2238625165137221493'      # Google Health's id; the join key. Absent = new.
-meal: BREAKFAST                 # BREAKFAST LUNCH DINNER SNACK ANYTIME
-name: Venti Iced Matcha Latte
-start: '2026-09-23T09:00:00-07:00'
-end: '2026-09-23T09:30:00-07:00'
-kcal: 320
-carbs_g: 48
-fat_g: 9
-nutrients:
-  PROTEIN: 8
-  SUGAR: 35
-serving:
-  amount: 1
-  unit: venti
-food_ref: users/…/food/dataPoints/792976696   # present = editable (see below)
-source: FITBIT                  # written by pull, read-only
-sync:
-  pulled: '2026-09-23T10:52:36-07:00'
-  digest: 2888f172db1909b2      # hash at last sync; how edits are detected
----
-
-Notes go here.
-```
-
-**Every number is a total for the portion you ate, not a per-unit rate.** That
-holds for `kcal`, `carbs_g`, `fat_g` and everything under `nutrients`.
-`serving` is a label describing the portion — it never scales anything:
-
-```sh
-./fsync add snack "Sun cake" 400 -a 2 -u piece   # 400 total, for both pieces
-./fsync add snack "Sun cake" 200 -a 2 -u piece   # claims 200 total — wrong
-```
-
-Confirmed against the API: Google's `daily-rollup` equals a plain sum of the
-`kcal` fields (3100 / 2437 / 1485 across three days here), with no multiplying
-by `amount`. And an identified entry's macros match its catalog food's
-reference quantity exactly — 8 cookies reading 160 kcal, not 160 per cookie.
-
-`protein` lives under `nutrients` rather than beside `carbs_g` and `fat_g`
-because that is how the API shapes it: `energy`, `totalCarbohydrate` and
-`totalFat` are named top-level fields, while protein shares the generic
-`nutrients` array with sodium, sugar, fibre, saturated fat and the rest.
-
-### Creating an entry
-
-Write a file with no `id` and push it. Only `meal`, `name`, `start` and `kcal`
-are required:
-
-```yaml
----
-meal: LUNCH
-name: Chicken Burrito
-start: '2026-09-23T12:30:00-07:00'
-kcal: 650
----
-```
-
-Drop it anywhere under `food/` — the path does not matter. `push` creates it,
-writes the returned id into the frontmatter, and files it under the right day. That round-trip is what makes an entry authored by hand or by an
-LLM indistinguishable from a pulled one.
-
-### Editing an entry: it is replaced, not patched
-
-Edit the frontmatter and push. The entry is **replaced** — a new one is
-created, the old one deleted — so it comes back with a **new id**, and the
-file is renamed to match:
-
-```
-  ok  2026-09-23/1558--black-sesame-soymilk--3843781039477682293.md  replaced 8889828334113072990
-```
-
-This is not a design preference. The v4 API has no working update for
-`nutrition-log`:
-
-| | PATCH result |
-| --- | --- |
-| Anonymous entry (no `food_ref`) | `500 INTERNAL`, even with nothing changed |
-| Identified entry (has `food_ref`) | `400 Invalid argument: data_point.name` |
-
-`updateMask` is rejected on this endpoint as an unbindable query parameter,
-and Google's own CLI registers no `update` operation for the type
-(`pkg/types/registry.go`, under a comment saying operations were confirmed by
-probing the live API). Create and delete both work, so an edit is expressed as
-both.
-
-**The create runs first.** If it fails, nothing has changed and the original
-entry is still there — deleting first would lose the entry outright when the
-create then failed. If the create succeeds but the delete doesn't, the entry is
-marked `part` and counted as a failed push, naming the duplicate id, because
-nothing else will catch it: no file claims that id any more, so it won't show up
-as a pending delete.
-
-Anything referencing an entry by id — a note, a script — needs updating after
-an edit. If that matters more than the edit, delete and re-add by hand instead.
-
-### Deleting an entry
-
-Delete the file, then push:
-
-```sh
-rm food/2026-09-23/1153--digest-check--2733503421442060062.md
-./fsync push            # lists what will go, then asks
-./fsync push --yes      # skip the prompt
-```
-
-`fsync` keeps an index of entries it has seen (`.fsync-index.json`), so a known
-id with no file on disk reads as a deletion. Because removing a remote record
-cannot be undone, `push` prints each entry it is about to delete — time, name,
-calories — and waits for a `y`. With no terminal attached it refuses outright
-rather than assuming consent; pass `--yes` for scripts.
-
-Until you push, the deletion is local only, and it stays pending until something
-resolves it. `pull` will not re-create a file you deleted — it holds it and says
-so — and declining the delete prompt leaves it pending rather than forgetting
-it, so the next `push` asks again. `pull --force` abandons the deletion and
-restores the file from the remote copy in one step. A pending deletion whose
-entry has also gone from Google Health is dropped on the next `pull`: there is
-nothing left to delete.
-
-### When a create loses its id
-
-The API does not always return the new entry's id in a shape we can read. If
-that happens the entry exists remotely but the file does not know its id, and
-pushing again would create a duplicate. `fsync` marks the file with
-`sync.created`, refuses to push it again, and saves the raw response to
-`.last-create-response.json` beside the index. The next `pull` matches it on
-time, name and calories, fills in the id, and the file becomes ordinary. If two
-remote entries match it on all three, `pull` names both ids and adopts neither
-— guessing wrong would leave a duplicate.
-
-`status` reports these as *awaiting pull*. In practice the id parses fine — this
-is a guard, not the normal path.
-
-### Edits and conflicts
-
-`pull` will not overwrite a file you have changed since the last sync; it skips
-it and says so. `--force` overwrites. Change detection is a hash of the fields
-you own, so metadata churn never reads as an edit.
-
-`push` will not replace an entry that changed in Google Health too. An edit goes
-out as create-then-delete, so pushing one would delete their version with
-nothing to recover it from. Before replacing anything, `push` reads back the
-days its edits touch and refuses the ones that moved on both sides:
-
-```
-  conf  2026-09-22/0800--ube-donut--…md
-         changed here and in Google Health; pushing would
-         delete their version. Take theirs with 'fsync pull
-         --force', or yours with 'fsync push --force'.
-         kcal: 285  (here)  vs  280  (remote)
-```
-
-It exits non-zero and pushes everything else. Creates don't trigger the read —
-there is nothing yet to conflict with.
-
-## Reading the raw API
-
-`fsync` covers day-to-day use; these are for looking behind it:
-
-```sh
-ghealth data nutrition-log list --format table
-ghealth data nutrition-log daily-rollup       # daily totals, to cross-check
-ghealth data nutrition-log list --raw --limit 1   # the real JSON shape
-ghealth data nutrition-log list --page-token …    # fsync follows these itself
-ghealth data food list                        # catalog, for editable entries
-ghealth auth export | jq -r '.scopes[]'       # confirm writeonly is present
-```
-
-The payload shape in `fsync` was taken from a real response, not the docs:
-Google's nutrition guide shows `interval` while the RPC reference shows
-`sample_time`. `interval` is correct. `mealType` also has a fifth value the docs
-omit, `ANYTIME`, which is what most app-logged entries use.
-
-## Worth knowing
-
-- Writing food needs no Fitbit or Pixel Watch. It's your account's data store.
-- Nothing is editable in place: `PATCH` fails for both anonymous and identified
-  entries, so `fsync` expresses an edit as create-then-delete (above). Deletes
-  go through `:batchDelete` — there is no HTTP DELETE.
-- `nutrition-log` only needs `"create"` added to its `Operations` list upstream;
-  the generic `data … create --json` path already exists. Small PR if you want it.
-- `fsync` reads every page, not the first one. A truncated answer is worse than
-  none here: an entry the API holds but didn't return looks exactly like one
-  deleted in the app, so `sync` would call it gone and `pull` would leave it
-  stale.
-- Timestamps in frontmatter are quoted when `fsync` writes them. Unquoted, YAML
-  reads `2026-09-23T12:30:00-07:00` as a datetime rather than a string, which
-  hashes differently from what the API returns — `fsync` normalises hand-written
-  ones on read so an edited date doesn't show up as a permanent remote change.
-
-Research writeup: [`docs/google-health-food-logging.html`](docs/google-health-food-logging.html)
-Sync flows: [`docs/fsync-flows.html`](docs/fsync-flows.html)
-CLI survey: [`docs/google-health-cli.html`](docs/google-health-cli.html)
+Historical references: [food API research](docs/google-health-food-logging.html),
+[original fsync flows](docs/fsync-flows.html),
+[Google CLI survey](docs/google-health-cli.html).

@@ -19,8 +19,8 @@
 # ghealth = "/usr/local/bin/ghealth"
 
 # Sync state: which remote ids have been seen, so a missing file reads as a
-# deletion. Defaults to sitting next to food_dir, which is what you want —
+# deletion. Defaults to sitting inside food_dir, which is what you want —
 # each food folder gets its own. Only set this if you have a reason.
-# Default: <food_dir>/../.fsync-index.json
+# Default: <food_dir>/.fsync-index.json
 #
-# index = "~/Dropbox/health/.fsync-index.json"
+# index = "~/Dropbox/health/food/.fsync-index.json"

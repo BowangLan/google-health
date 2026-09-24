@@ -1,0 +1,770 @@
+"""Exercise sync through real files and an in-memory Google adapter."""
+
+import copy
+import datetime as dt
+import io
+import json
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from healthsync.cli import main
+from healthsync.common import Clock
+from healthsync.config import Config, resolve
+from healthsync.google_health import GoogleHealth, RemoteError, extract_id
+from healthsync.records.food import Food
+from healthsync.records.weight import Weight
+from healthsync.store import Store, read_entry, write_entry
+from healthsync.sync import Engine
+
+
+class FixedClock(Clock):
+    def now(self):
+        return dt.datetime(2026, 9, 24, 10, tzinfo=self.zone)
+
+
+class FakeRemote:
+    def __init__(self, record):
+        self.record = record
+        self.points = {}
+        self.calls = []
+        self.counter = 1000
+        self.lose_id = False
+        self.fail_delete = False
+        self.uncertain_create = False
+        self.fail_create = False
+
+    def put(self, fm, eid="1234"):
+        dp = self.record.fm_to_remote(copy.deepcopy(fm))
+        dp["name"] = f"users/me/dataTypes/{self.record.api_type}/dataPoints/{eid}"
+        self.points[eid] = dp
+        return dp
+
+    def fetch(self, since, until="today", limit=500):
+        self.calls.append(("fetch", since))
+        return [
+            copy.deepcopy(dp)
+            for dp in self.points.values()
+            if self.record.day(self.record.remote_to_fm(dp)) >= since
+        ]
+
+    def get(self, eid):
+        self.calls.append(("get", eid))
+        return copy.deepcopy(self.points.get(eid))
+
+    def create(self, payload):
+        self.calls.append(("create", copy.deepcopy(payload)))
+        if self.fail_create:
+            raise RemoteError("rejected")
+        self.counter += 1
+        eid = str(self.counter)
+        dp = copy.deepcopy(payload)
+        dp["name"] = f"users/me/dataTypes/{self.record.api_type}/dataPoints/{eid}"
+        self.points[eid] = dp
+        if self.uncertain_create:
+            raise RemoteError("connection lost", uncertain=True)
+        return {} if self.lose_id else {"response": dp, "done": True}
+
+    def update(self, eid, payload):
+        self.calls.append(("update", eid))
+        dp = copy.deepcopy(payload)
+        dp["name"] = self.points[eid]["name"]
+        self.points[eid] = dp
+        return {"response": dp, "done": True}
+
+    def delete(self, ids):
+        self.calls.append(("delete", list(ids)))
+        if self.fail_delete:
+            raise RemoteError("delete rejected")
+        for eid in ids:
+            self.points.pop(eid, None)
+        return {}
+
+
+class SyncTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.output = io.StringIO()
+        self.redirect = redirect_stdout(self.output)
+        self.redirect.__enter__()
+        self.addCleanup(self.redirect.__exit__, None, None, None)
+        self.engine = self.make_engine(Weight())
+
+    def make_engine(self, record):
+        directory = self.root / record.kind
+        config = Config(record.kind, directory, directory / ".index.json", Path("fake"))
+        return Engine(Store(config, record), FakeRemote(record), FixedClock())
+
+    def weight(self, kg=79.4):
+        return {"time": "2026-09-24T08:00:00-07:00", "weight_kg": kg}
+
+    def food(self):
+        return {
+            "start": "2026-09-24T12:00:00-07:00",
+            "meal": "LUNCH",
+            "name": "Burrito",
+            "kcal": 650,
+        }
+
+    def pull_one(self, engine=None, fm=None):
+        e = engine or self.engine
+        e.remote.put(fm or self.weight())
+        self.assertEqual(e.pull(), 0)
+        return next(iter(e.store.scan()[0].values()))
+
+    def edit(self, path, key, value, body=None):
+        fm, old_body = read_entry(path)
+        fm[key] = value
+        write_entry(path, fm, old_body if body is None else body)
+        return fm
+
+    def test_weight_round_trip_updates_same_id_and_preserves_private_notes(self):
+        e = self.engine
+        path, fm, _ = self.pull_one()
+        self.edit(path, "weight_kg", 80.1, "Private context")
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertIn(("update", "1234"), e.remote.calls)
+        self.assertEqual(e.pull(), 0)
+        fm, body = read_entry(path)
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(fm["weight_kg"], 80.1)
+        self.assertEqual(body.strip(), "Private context")
+        self.assertEqual(e.remote.points["1234"]["weight"]["notes"], "")
+
+    def test_food_replace_creates_before_deleting(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "kcal", 700)
+        self.assertEqual(e.push(), 0)
+        kinds = [c[0] for c in e.remote.calls]
+        self.assertLess(kinds.index("create"), kinds.index("delete"))
+        self.assertNotIn("1234", e.remote.points)
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(e.record.dirty(next(iter(e.store.scan()[0].values()))[1]))
+
+    def test_partial_replacement_retries_only_cleanup(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "kcal", 700)
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(len(e.remote.points), 2)
+        self.assertTrue(e.store.operations())
+        e.remote.fail_delete = False
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertEqual(sum(c[0] == "create" for c in e.remote.calls), 1)
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+
+    def test_cleanup_refuses_remote_edit_after_replacement(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "kcal", 700)
+        e.remote.fail_delete = True
+        e.push()
+        e.remote.fail_delete = False
+        e.remote.points["1234"]["nutritionLog"]["energy"]["kcal"] = 680
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(len(e.remote.points), 2)
+
+    def test_failed_food_create_keeps_original(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "kcal", 700)
+        e.remote.fail_create = True
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertFalse(e.store.operations())
+
+    def test_add_only_pushes_requested_record(self):
+        e = self.engine
+        e.add(self.weight(70), no_push=True)
+        e.add(self.weight(71))
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertEqual(len(e.store.scan()[1]), 1)
+
+    def test_multiple_same_minute_records_are_preserved(self):
+        e = self.engine
+        e.add(self.weight(), no_push=True)
+        e.add(self.weight(), no_push=True)
+        self.assertEqual(len(e.store.scan()[1]), 2)
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(len(e.remote.points), 2)
+
+    def test_lost_id_is_recovered_without_duplicate_create(self):
+        e = self.engine
+        e.remote.lose_id = True
+        self.assertEqual(e.add(self.weight()), 1)
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(e.store.operations())
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(len(e.remote.points), 1)
+
+    def test_uncertain_create_is_reconciled_before_retry(self):
+        e = self.engine
+        e.remote.uncertain_create = True
+        self.assertEqual(e.add(self.weight()), 1)
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertEqual(e.pull(), 0)
+        self.assertEqual(len(e.store.scan()[0]), 1)
+
+    def test_ambiguous_recovery_remains_held(self):
+        e = self.engine
+        e.remote.lose_id = True
+        e.add(self.weight())
+        e.remote.put(self.weight(), "9999")
+        self.assertEqual(e.pull(), 1)
+        self.assertTrue(e.store.operations())
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(len(e.remote.points), 2)
+
+    def test_conflict_detected_even_if_local_date_moves_outside_window(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "time", "2026-10-10T08:00:00-07:00")
+        e.remote.put(self.weight(90))
+        self.assertEqual(e.push(), 1)
+        self.assertFalse(any(c[0] == "update" for c in e.remote.calls))
+        self.assertIn(("get", "1234"), e.remote.calls)
+
+    def test_missing_remote_is_a_conflict_and_not_recreated(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 90)
+        e.remote.points.clear()
+        self.assertEqual(e.push(), 1)
+        self.assertFalse(e.remote.points)
+
+    def test_local_delete_is_held_on_pull_and_confirmed_on_push(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(path.exists())
+        with patch("sys.stdin.isatty", return_value=False):
+            self.assertEqual(e.push(), 1)
+        self.assertIn("1234", e.remote.points)
+        self.assertEqual(e.push(yes=True), 0)
+        self.assertFalse(e.remote.points)
+        self.assertFalse(e.store.load_index())
+
+    def test_delete_remote_conflict_refused(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        e.remote.put(self.weight(90))
+        self.assertEqual(e.push(yes=True), 1)
+        self.assertIn("1234", e.remote.points)
+        self.assertEqual(e.pull(force=True), 0)
+        self.assertTrue(path.exists())
+
+    def test_pull_retains_dirty_local_file_and_notes(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 90, "My note")
+        e.remote.put(self.weight(80))
+        e.pull()
+        fm, body = read_entry(path)
+        self.assertEqual(fm["weight_kg"], 90)
+        self.assertEqual(body.strip(), "My note")
+        e.pull(force=True)
+        self.assertEqual(read_entry(path)[0]["weight_kg"], 80)
+        self.assertEqual(read_entry(path)[1].strip(), "My note")
+
+    def test_same_id_in_food_and_weight_is_isolated(self):
+        weight = self.engine
+        food = self.make_engine(Food())
+        self.pull_one(weight)
+        path, _, _ = self.pull_one(food, self.food())
+        path.unlink()
+        self.assertFalse(weight.store.pending_deletes(weight.store.scan()[0]))
+        self.assertEqual(weight.push(), 0)
+        self.assertIn("1234", food.remote.points)
+
+    def test_broken_file_cannot_be_mistaken_for_deletion(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.write_text("broken YAML")
+        with self.assertRaises(ValueError):
+            e.push(yes=True)
+        self.assertIn("1234", e.remote.points)
+
+    def test_unreadable_index_fails_closed(self):
+        e = self.engine
+        self.pull_one()
+        e.store.index.write_text("broken")
+        with self.assertRaises(ValueError):
+            e.push(yes=True)
+        self.assertIn("1234", e.remote.points)
+
+    def test_dry_run_does_not_create_local_records(self):
+        self.assertEqual(self.engine.add(self.weight(), dry_run=True), 0)
+        self.assertFalse(self.engine.store.directory.exists())
+        self.assertFalse(self.engine.remote.calls)
+
+    def test_dry_run_push_does_not_change_files_or_remote(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 90)
+        before = {
+            p: p.read_bytes() for p in e.store.directory.rglob("*") if p.is_file()
+        }
+        self.assertEqual(e.push(dry_run=True), 0)
+        after = {p: p.read_bytes() for p in e.store.directory.rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+        self.assertFalse(any(c[0] == "update" for c in e.remote.calls))
+
+    def test_weight_notes_are_remote_but_body_is_private(self):
+        fm = self.weight()
+        fm["remote_notes"] = "morning"
+        self.engine.add(fm, "private")
+        dp = next(iter(self.engine.remote.points.values()))
+        self.assertEqual(dp["weight"]["notes"], "morning")
+        self.assertNotIn("private", json.dumps(dp))
+
+    def test_recovery_preserves_edits_made_after_uncertain_create(self):
+        e = self.engine
+        e.remote.uncertain_create = True
+        e.add(self.weight())
+        path = e.store.scan()[1][0][0]
+        self.edit(path, "weight_kg", 81, "Edited after request")
+        self.assertEqual(e.pull(), 0)
+        path, fm, body = next(iter(e.store.scan()[0].values()))
+        self.assertEqual(fm["weight_kg"], 81)
+        self.assertTrue(e.record.dirty(fm))
+        self.assertIn("Edited after request", body)
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(len(e.remote.points), 1)
+
+    def test_renamed_uncertain_create_is_not_replayed(self):
+        e = self.engine
+        e.remote.uncertain_create = True
+        e.add(self.weight())
+        path = e.store.scan()[1][0][0]
+        path.rename(path.with_name("renamed.md"))
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(sum(c[0] == "create" for c in e.remote.calls), 1)
+
+    def test_crash_after_response_before_commit_is_recovered(self):
+        e = self.engine
+        with (
+            patch.object(e, "_commit", side_effect=OSError("disk unavailable")),
+            self.assertRaises(OSError),
+        ):
+            e.add(self.weight())
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertTrue(e.store.operations())
+        self.assertEqual(e.pull(), 0)
+        self.assertEqual(len(e.store.scan()[0]), 1)
+        self.assertEqual(sum(c[0] == "create" for c in e.remote.calls), 1)
+
+    def test_pending_patch_is_reconciled_without_replay(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 82)
+        with (
+            patch.object(e, "_commit", side_effect=OSError("disk unavailable")),
+            self.assertRaises(OSError),
+        ):
+            e.push()
+        self.assertEqual(e.pull(), 0)
+        self.assertEqual(sum(c[0] == "update" for c in e.remote.calls), 1)
+        self.assertFalse(e.record.dirty(read_entry(path)[0]))
+
+    def test_duplicate_local_id_stops_remote_mutations(self):
+        e = self.engine
+        path, fm, body = self.pull_one()
+        write_entry(path.with_name("duplicate.md"), fm, body)
+        with self.assertRaises(ValueError):
+            e.push(yes=True)
+        self.assertFalse(
+            any(c[0] in ("create", "update", "delete") for c in e.remote.calls)
+        )
+
+    def test_whole_collection_can_move_with_its_index(self):
+        e = self.engine
+        self.pull_one()
+        old = e.store.directory
+        new = old.with_name("relocated")
+        old.rename(new)
+        config = Config("weight", new, new / ".index.json", Path("fake"))
+        store = Store(config, Weight())
+        self.assertIn("1234", store.load_index())
+        store.save_index(store.scan()[0])
+        self.assertEqual(json.loads(store.index.read_text())["directory"], str(new))
+
+    def test_shared_external_index_refuses_different_directory(self):
+        e = self.engine
+        self.pull_one()
+        config = Config("weight", self.root / "empty", e.store.index, Path("fake"))
+        with self.assertRaises(ValueError):
+            Store(config, Weight()).load_index()
+
+    def test_legacy_food_index_retains_baseline_and_tombstones(self):
+        e = self.make_engine(Food())
+        path, fm, _ = self.pull_one(e, self.food())
+        e.store.index.write_text(
+            json.dumps(
+                {
+                    "entries": {
+                        "1234": {
+                            "name": fm["name"],
+                            "start": fm["start"],
+                            "path": e.store.rel(path),
+                            "kcal": 650,
+                        },
+                        "old-deletion": {
+                            "name": "Deleted meal",
+                            "start": fm["start"],
+                            "path": "deleted.md",
+                            "kcal": 100,
+                        },
+                    }
+                }
+            )
+        )
+        e.store.save_index(e.store.scan()[0])
+        data = e.store.load_index()
+        self.assertEqual(data["1234"]["digest"], fm["sync"]["digest"])
+        self.assertIn("old-deletion", e.store.pending_deletes(e.store.scan()[0]))
+
+    def test_deleted_record_moved_remotely_is_not_forgotten(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        fm = self.weight()
+        fm["time"] = "2026-01-01T08:00:00-08:00"
+        e.remote.put(fm)
+        e.pull()
+        self.assertIn("1234", e.store.pending_deletes(e.store.scan()[0]))
+        self.assertEqual(e.push(yes=True), 1)
+
+    def test_sync_reuses_fetched_snapshot_when_pulling(self):
+        e = self.engine
+        e.remote.put(self.weight())
+        self.assertEqual(e.sync(pull=True), 0)
+        self.assertEqual(sum(c[0] == "fetch" for c in e.remote.calls), 1)
+
+    def test_legacy_unlocated_index_is_not_adopted_by_empty_folder(self):
+        (self.root / ".fsync-index.json").write_text(
+            json.dumps({"entries": {"1234": {"path": "meal.md"}}})
+        )
+        config = Config(
+            "food",
+            self.root / "empty-food",
+            self.root / "empty-food/.fsync-index.json",
+            Path("fake"),
+        )
+        with self.assertRaises(ValueError):
+            Store(config, Food()).load_index()
+
+    def test_remote_metadata_does_not_make_weight_dirty(self):
+        e = self.engine
+        path, fm, _ = self.pull_one()
+        fm["source"] = "FITBIT"
+        fm["sync"]["pulled"] = "different"
+        write_entry(path, fm)
+        self.assertFalse(e.record.dirty(fm))
+
+    def test_two_local_pending_records_cannot_claim_one_remote_record(self):
+        e = self.engine
+        e.remote.uncertain_create = True
+        e.add(self.weight())
+        e.add(self.weight())
+        e.remote.points.pop("1002")
+        self.assertEqual(e.pull(), 1)
+        self.assertEqual(len(e.store.operations()), 2)
+        self.assertEqual(len(e.store.scan()[1]), 2)
+        self.assertEqual(len(e.remote.points), 1)
+
+    def test_legacy_parent_index_migrates_only_with_matching_local_record(self):
+        e = self.make_engine(Food())
+        path, fm, _ = self.pull_one(e, self.food())
+        e.store.index.unlink()
+        e.store.index = e.store.directory / ".fsync-index.json"
+        legacy = e.store.directory.parent / ".fsync-index.json"
+        legacy.write_text(
+            json.dumps(
+                {
+                    "entries": {
+                        "1234": {
+                            "name": fm["name"],
+                            "start": fm["start"],
+                            "path": e.store.rel(path),
+                        }
+                    }
+                }
+            )
+        )
+        self.assertIn("1234", e.store.load_index())
+        self.assertTrue(legacy.exists())
+        e.store.save_index(e.store.scan()[0])
+        self.assertFalse(legacy.exists())
+        self.assertTrue(legacy.with_name(".fsync-index.migrated.json").exists())
+        self.assertIn("1234", e.store.load_index())
+
+    def test_custom_indexes_do_not_share_recovery_journals(self):
+        first = self.engine
+        first.store.index = self.root / "first-index.json"
+        first.remote.uncertain_create = True
+        first.add(self.weight())
+        config = Config(
+            "weight",
+            self.root / "other-weight",
+            self.root / "second-index.json",
+            Path("fake"),
+        )
+        second = Store(config, Weight())
+        self.assertNotEqual(first.store.journal, second.journal)
+        self.assertFalse(second.operations())
+        self.assertTrue(first.store.operations())
+
+    def test_frontmatter_delimiters_inside_values_and_body_are_preserved(self):
+        e = self.engine
+        fm = self.weight()
+        fm["remote_notes"] = "morning---before breakfast"
+        body = "Local notes\n---\nMore notes"
+        e.add(fm, body, no_push=True)
+        _, result, result_body = e.store.scan()[1][0]
+        self.assertEqual(result["remote_notes"], fm["remote_notes"])
+        self.assertEqual(result_body.strip(), body)
+
+    def test_weight_timestamp_precision_survives_file_and_patch_round_trip(self):
+        e = self.engine
+        fm = self.weight()
+        fm["time"] = "2026-09-24T08:00:00.123456789-07:00"
+        path, pulled, _ = self.pull_one(e, fm)
+        self.assertEqual(pulled["time"], fm["time"])
+        self.edit(path, "weight_kg", 80)
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(
+            e.remote.points["1234"]["weight"]["sampleTime"]["physicalTime"],
+            "2026-09-24T15:00:00.123456789Z",
+        )
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(e.record.dirty(read_entry(path)[0]))
+
+    def test_subsecond_remote_change_is_a_conflict(self):
+        e = self.engine
+        fm = self.weight()
+        fm["time"] = "2026-09-24T08:00:00.123456-07:00"
+        path, _, _ = self.pull_one(e, fm)
+        self.edit(path, "weight_kg", 80)
+        fm["time"] = "2026-09-24T08:00:00.654321-07:00"
+        e.remote.put(fm)
+        self.assertEqual(e.push(), 1)
+        self.assertFalse(any(call[0] == "update" for call in e.remote.calls))
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.config = self.root / "hsync.toml"
+        self.config.write_text(
+            'food_dir = "food"\nweight_dir = "weight"\nweight_unit = "lb"\n'
+        )
+        self.output = io.StringIO()
+        self.redirect = redirect_stdout(self.output)
+        self.redirect.__enter__()
+        self.addCleanup(self.redirect.__exit__, None, None, None)
+
+    def test_legacy_add_and_new_food_command_share_files(self):
+        args = [
+            "--config",
+            str(self.config),
+            "add",
+            "anytime",
+            "Burger",
+            "330",
+            "-p",
+            "23",
+            "--no-push",
+        ]
+        self.assertEqual(main(args, legacy=True), 0)
+        self.assertEqual(main(["food", "status", "--config", str(self.config)]), 0)
+        self.assertEqual(len(list((self.root / "food").rglob("*.md"))), 1)
+
+    def test_weight_add_pounds_and_past_date_noon(self):
+        self.assertEqual(
+            main(
+                [
+                    "weight",
+                    "--config",
+                    str(self.config),
+                    "add",
+                    "175",
+                    "--date",
+                    "2026-01-15",
+                    "--no-push",
+                ]
+            ),
+            0,
+        )
+        path = next((self.root / "weight").rglob("*.md"))
+        fm, body = read_entry(path)
+        self.assertAlmostEqual(fm["weight_kg"], 79.37866475)
+        self.assertEqual(fm["time"], "2026-01-15T12:00:00-08:00")
+        self.assertIn("placeholder", body)
+
+    def test_explicit_time_and_sodium(self):
+        self.assertEqual(
+            main(
+                [
+                    "food",
+                    "add",
+                    "anytime",
+                    "Soup",
+                    "100",
+                    "--date",
+                    "2026-09-20",
+                    "--at",
+                    "08:15",
+                    "--sodium-mg",
+                    "480",
+                    "--no-push",
+                    "--config",
+                    str(self.config),
+                ]
+            ),
+            0,
+        )
+        fm, _ = read_entry(next((self.root / "food").rglob("*.md")))
+        self.assertEqual(fm["nutrients"]["SODIUM"], 0.48)
+        self.assertEqual(fm["start"], "2026-09-20T08:15:00-07:00")
+
+    def test_aggregate_requires_all(self):
+        with self.assertRaises(SystemExit) as exc:
+            main(["status", "--config", str(self.config)])
+        self.assertEqual(exc.exception.code, 2)
+        self.assertEqual(main(["status", "--all", "--config", str(self.config)]), 0)
+
+    def test_separate_non_nested_directories_required(self):
+        self.config.write_text('food_dir = "same"\nweight_dir = "same/nested"\n')
+        with self.assertRaises(ValueError):
+            resolve(SimpleNamespace(config=str(self.config)), "weight")
+
+    def test_legacy_index_does_not_apply_to_weight(self):
+        self.config.write_text(
+            'index = "custom-food-index.json"\nfood_dir = "food"\nweight_dir = "weight"\n'
+        )
+        args = SimpleNamespace(config=str(self.config))
+        self.assertEqual(
+            resolve(args, "food").index, self.root / "custom-food-index.json"
+        )
+        self.assertEqual(
+            resolve(args, "weight").index, self.root / "weight/.hsync-index.json"
+        )
+
+
+class TransportTests(unittest.TestCase):
+    def test_operation_name_is_not_a_record_id(self):
+        self.assertEqual(extract_id({"name": "operations/abcd"}), "")
+        self.assertEqual(
+            extract_id(
+                {
+                    "name": "operations/abcd",
+                    "response": {"name": "users/me/dataTypes/weight/dataPoints/1234"},
+                }
+            ),
+            "1234",
+        )
+
+    def test_all_pages_are_read(self):
+        remote = GoogleHealth(Path("fake"), Weight())
+        pages = [
+            SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {"dataPoints": [{"name": "one"}], "nextPageToken": "next"}
+                ),
+            ),
+            SimpleNamespace(
+                returncode=0, stdout=json.dumps({"dataPoints": [{"name": "two"}]})
+            ),
+        ]
+        with patch("healthsync.google_health.subprocess.run", side_effect=pages) as run:
+            self.assertEqual(len(remote.fetch("2026-09-20")), 2)
+        self.assertIn("--page-token", run.call_args_list[1].args[0])
+
+    def test_partial_listing_is_never_returned(self):
+        remote = GoogleHealth(Path("fake"), Weight())
+        page = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"dataPoints": [], "nextPageToken": "repeat"}),
+        )
+        with (
+            patch("healthsync.google_health.subprocess.run", return_value=page),
+            self.assertRaises(RemoteError),
+        ):
+            remote.fetch("2026-09-20")
+
+    def test_weight_filter_uses_utc_and_food_filter_uses_civil_dates(self):
+        page = SimpleNamespace(returncode=0, stdout='{"dataPoints": []}')
+        with patch("healthsync.google_health.subprocess.run", return_value=page) as run:
+            GoogleHealth(Path("fake"), Weight()).fetch("2026-01-15", "2026-01-15")
+            args = run.call_args.args[0]
+            query = args[args.index("--filter") + 1]
+            self.assertIn(
+                'weight.sample_time.physical_time >= "2026-01-15T08:00:00Z"', query
+            )
+            self.assertIn('< "2026-01-16T08:00:00Z"', query)
+            GoogleHealth(Path("fake"), Food()).fetch("2026-01-15", "2026-01-15")
+            args = run.call_args.args[0]
+            query = args[args.index("--filter") + 1]
+            self.assertIn(
+                'nutrition_log.interval.civil_start_time >= "2026-01-15"', query
+            )
+
+    def test_pending_operation_does_not_count_as_success(self):
+        remote = GoogleHealth(Path("fake"), Weight())
+        with self.assertRaises(RemoteError) as exc:
+            remote.finish({"name": "users/me/operations/1234", "done": False})
+        self.assertTrue(exc.exception.uncertain)
+
+
+class RecordValidationTests(unittest.TestCase):
+    def test_nonfinite_and_out_of_range_weights_rejected(self):
+        record = Weight()
+        for val in (float("nan"), float("inf"), -1, 1001, True):
+            with self.subTest(val=val), self.assertRaises((ValueError, TypeError)):
+                record.validate({"time": "2026-09-24T08:00:00-07:00", "weight_kg": val})
+
+    def test_pound_conversion_has_stable_round_trip(self):
+        record = Weight()
+        fm = {"time": "2026-09-24T08:00:00-07:00", "weight_kg": 175 * 0.45359237}
+        record.validate(fm)
+        digest = record.digest(fm)
+        for _ in range(10):
+            dp = record.fm_to_remote(fm)
+            dp["name"] = "users/me/dataTypes/weight/dataPoints/1234"
+            fm = record.remote_to_fm(dp)
+            self.assertEqual(record.digest(fm), digest)
+
+    def test_invalid_or_nonexistent_local_time_rejected(self):
+        clock = FixedClock()
+        for date, time in (
+            ("2026-09-24", "25:00"),
+            ("2026-09-24", "08:15:30"),
+            ("2026-03-08", "02:30"),
+        ):
+            with self.subTest(date=date, time=time), self.assertRaises(ValueError):
+                clock.entry_time(date, time)
+        self.assertEqual(
+            clock.entry_time("2026-09-24", "8:15")[0], "2026-09-24T08:15:00-07:00"
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

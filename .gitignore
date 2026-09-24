@@ -1,9 +1,9 @@
 # ---------------------------------------------------------------------------
-# Your food logs. This is personal health data — it is deliberately never
-# tracked. `fsync pull` rebuilds the whole folder from Google Health, so the
-# remote is the source of truth and nothing here is lost by not committing it.
+# Personal health records stay untracked. Pull can restore synced fields;
+# private notes, pending changes, and recovery state need a separate backup.
 # ---------------------------------------------------------------------------
 /food/
+/weight/
 
 # Credentials ---------------------------------------------------------------
 # The OAuth client secret lives at ~/.config/ghealth/client_secret.json; the
@@ -15,13 +15,22 @@ client_secret*.json
 # Local state ---------------------------------------------------------------
 # Derived, machine-specific, and rebuilt on demand.
 .fsync-index.json
+.fsync-index.migrated*.json
 .last-create-response.json
 
 # Your config: local machine paths. fsync.toml.example is the tracked template.
 /fsync.toml
+/hsync.toml
 
 # Google's CLI: a clone plus a compiled Go binary, restored by setup-wizard.sh.
 /google-health-cli/
 
 # macOS ---------------------------------------------------------------------
 .DS_Store
+
+# Python bytecode and per-collection recovery state
+__pycache__/
+*.py[cod]
+.hsync-index.json
+.hsync.lock
+.*-operations.json
