@@ -37,6 +37,26 @@ class Engine:
             "digest": self.record.digest(fm),
         }
 
+    def recovery_files_ready(self):
+        """Check recovery inputs before fetching or changing any remote records."""
+        by_id, _, _ = self.scan()
+        ready = True
+        for op in self.store.operations().values():
+            path = self.store.directory / op["path"]
+            # Acknowledged records may have moved before the journal was cleared.
+            known_id = op.get("new_id") or (
+                op.get("old_id") if op["action"] == "patch" else None
+            )
+            if path.is_file() or (known_id and known_id in by_id):
+                continue
+            print(
+                f"  {S.warn('hold')}{path}: pending operation file is missing; "
+                "move it back or restore it from backup, then run pull. "
+                f"Keep the recovery journal at {self.store.journal}."
+            )
+            ready = False
+        return ready
+
     def remote_record(self, eid):
         dp = self.remote.get(eid)
         return self.record.remote_to_fm(dp) if dp else None
@@ -303,6 +323,8 @@ class Engine:
     def pull(self, days=7, limit=500, force=False, points=None):
         self.scan()
         self.store.load_index()  # Validate before writing anything.
+        if not self.recovery_files_ready():
+            return 1
         requested = self.clock.today() - dt.timedelta(days=days - 1)
         first = self.store.recovery_day(requested)
         since = first.isoformat()
@@ -396,6 +418,8 @@ class Engine:
     def push(self, dry_run=False, yes=False, force=False, limit=500):
         by_id, new, orphans = self.scan()
         self.store.load_index()
+        if not self.recovery_files_ready():
+            return 1
         failed = len(orphans)
         recovered = deleted = 0
         for key, op in self.store.operations().items():
@@ -501,6 +525,8 @@ class Engine:
 
     def sync(self, pull=False, push=False, yes=False, limit=500):
         by_id, _, _ = self.scan()
+        if not self.recovery_files_ready():
+            return 1
         since = self.store.earliest_day(self.clock.today())
         points = self.remote.fetch(since.isoformat(), limit=limit)
         remote = {

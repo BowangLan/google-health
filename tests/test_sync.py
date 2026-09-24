@@ -492,6 +492,41 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(e.push(), 1)
         self.assertEqual(sum(c[0] == "create" for c in e.remote.calls), 1)
 
+    def test_missing_pending_file_is_reported_before_recovery_reads_or_writes(self):
+        e = self.engine
+        e.remote.uncertain_create = True
+        e.add(self.weight())
+        path = e.store.scan()[1][0][0]
+        staged = self.root / 'staged.md'
+        path.rename(staged)
+        journal = e.store.journal.read_bytes()
+        e.remote.calls.clear()
+        for command in (e.pull, e.push, e.sync):
+            self.assertEqual(command(), 1)
+            self.assertEqual(e.remote.calls, [])
+            self.assertEqual(e.store.journal.read_bytes(), journal)
+        self.assertIn('pending operation file is missing', self.output.getvalue())
+        self.assertIn(str(path), self.output.getvalue())
+        self.assertIn('move it back or restore it from backup', self.output.getvalue())
+        staged.rename(path)
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(e.store.operations())
+        self.assertEqual(len(e.remote.points), 1)
+
+    def test_missing_cleanup_file_blocks_remote_deletion(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, 'kcal', 700)
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(), 1)
+        op = next(iter(e.store.operations().values()))
+        (e.store.directory / op['path']).rename(self.root / 'staged.md')
+        e.remote.fail_delete = False
+        e.remote.calls.clear()
+        self.assertEqual(e.push(), 1)
+        self.assertEqual(e.remote.calls, [])
+        self.assertEqual(len(e.remote.points), 2)
+
     def test_crash_after_response_before_commit_is_recovered(self):
         e = self.engine
         with (

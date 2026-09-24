@@ -274,6 +274,12 @@ Keep pending-operation files in place until recovery completes. Bulk push pauses
 while unresolved operations remain; a newly requested `add` still targets only
 its own record.
 
+Pull, push, and sync check that pending-operation files are present before any
+remote calls. If one was moved outside the collection or renamed before receiving
+an ID, move it back to the printed path (or restore it from backup) and run pull.
+Keep the journal intact. An acknowledged record can still be recovered after a
+rename within the collection because its saved ID identifies it.
+
 An incomplete food replacement keeps the new record and old ID in its journal.
 Pull can recover the new ID; push retries only the old-ID cleanup, checking first
 that the old record has not changed. Pending/uncertain weight updates reconcile
