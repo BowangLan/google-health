@@ -45,7 +45,13 @@ Markdown bodies are private; weight `remote_notes` is sent to Google Health.
 
 If a create may have succeeded but its ID was not saved, reconcile with the
 collection's `pull` before retrying; a blind retry can duplicate the record.
-Widen `--days` when the affected entry is older. Preserve recovery journals.
+Pull automatically includes older pending operations. Preserve recovery journals.
+
+Before staging or moving logs outside a collection, run its `status` and inspect
+its pending-operation journal and the selected files' IDs. Recover pending
+operations before moving their files. Moving a synced file outside the collection
+stages a remote deletion; explain that consequence before moving it. For temporary
+copies of synced records, leave the originals in place unless removal is requested.
 
 Push refuses conflicting edits or deletions, prints `conf`, and exits non-zero.
 Do not pass `--force` to get past it; report the conflict and let the user pick

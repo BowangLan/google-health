@@ -200,6 +200,11 @@ Move or rename a record anywhere inside its collection, then run `tidy` to resto
 its normal location. New same-minute records receive a filename suffix until
 Google assigns an ID. The two collections must use separate, non-nested folders.
 
+Before temporarily staging files outside a collection, check `status` and pending
+operations. Complete recovery before moving any affected files. An unpushed file
+can be moved out to exclude it from push; moving a synced file out stages its remote
+deletion. Copy synced files instead when you only need a temporary backup.
+
 ## Configuration
 
 Copy `hsync.toml.example` to `hsync.toml`:
