@@ -216,6 +216,11 @@ then `~/.config/hsync/config.toml`, then `~/.config/fsync/config.toml`.
 The first existing file is used. `--config`, `HSYNC_CONFIG`, or legacy
 `FSYNC_CONFIG` can name a specific file.
 
+`status` reports records as **locally unchanged** when their fields match the
+saved baseline; it does not contact Google. `sync` separately reports how many
+records match Google Health, differ, are missing remotely, or exist only remotely.
+That comparison describes the state before any selected pull/push actions.
+
 Directory precedence is command-line flag, `HSYNC_FOOD_DIR`/`HSYNC_WEIGHT_DIR`,
 legacy `FSYNC_FOOD_DIR` for food, configuration, then defaults. Common flags work
 before or after the record type or command. Paths in configuration are relative

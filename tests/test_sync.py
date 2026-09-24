@@ -197,6 +197,36 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(e.push(yes=True), 1)
         self.assertIn('1234', e.remote.points)
 
+    def test_status_does_not_claim_remote_agreement(self):
+        e = self.engine
+        self.pull_one()
+        e.remote.put(self.weight(90))
+        e.remote.calls.clear()
+        self.output.truncate(0)
+        self.output.seek(0)
+        e.status()
+        self.assertIn('1 locally unchanged', self.output.getvalue())
+        self.assertNotIn('in sync', self.output.getvalue())
+        self.assertEqual(e.remote.calls, [])
+        with patch('sys.stdin.isatty', return_value=False):
+            e.sync()
+        self.assertIn('0 match Google Health, 1 differ', self.output.getvalue())
+
+    def test_sync_reports_verified_matches_and_missing_records(self):
+        e = self.engine
+        self.pull_one()
+        with patch('sys.stdin.isatty', return_value=False):
+            e.sync()
+        self.assertIn('1 match Google Health, 0 differ', self.output.getvalue())
+        self.output.truncate(0)
+        self.output.seek(0)
+        e.remote.points.clear()
+        e.remote.put(self.weight(80), '9999')
+        with patch('sys.stdin.isatty', return_value=False):
+            e.sync()
+        self.assertIn('0 match Google Health, 0 differ, 1 missing remotely, 1 remote only',
+                      self.output.getvalue())
+
     def test_partial_replacement_retries_only_cleanup(self):
         e = self.make_engine(Food())
         path, _, _ = self.pull_one(e, self.food())

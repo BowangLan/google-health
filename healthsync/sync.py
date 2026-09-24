@@ -383,7 +383,7 @@ class Engine:
                 f"{S.dim('pull to reconcile, push to finish cleanup')}"
             )
         print(
-            f"{S.bold('status')} {len(by_id) - len(dirty)} in sync, {len(dirty)} modified, "
+            f"{S.bold('status')} {len(by_id) - len(dirty)} locally unchanged, {len(dirty)} modified, "
             f"{len(new)} new, {len(doomed)} deleted, {len(orphans)} awaiting pull, "
             f"{len(self.store.operations())} pending operations"
         )
@@ -492,6 +492,7 @@ class Engine:
         }
         doomed = self.store.pending_deletes(by_id)
         print(S.dim(f"range {since} .. {self.clock.today()}"))
+        matched = different = missing = remote_only = 0
         for eid, (path, fm, _) in by_id.items():
             other = remote.get(eid)
             if other is None:
@@ -502,11 +503,13 @@ class Engine:
                     # pull will reuse a full record fetched by id outside the window.
                     points.append(point)
             if other is None:
+                missing += 1
                 print(
                     f"  {S.bad('x')}{self.store.rel(path)}: "
                     f"{S.dim('gone remotely (kept locally)')}"
                 )
             elif self.record.digest(fm) != self.record.digest(other):
+                different += 1
                 mark, colour = (
                     ("!", S.red)
                     if self.record.dirty(fm) and self.conflicts(fm, other)
@@ -517,12 +520,19 @@ class Engine:
                 print(f"  {S.tag(colour, mark)}{self.store.rel(path)}")
                 for key, mine, theirs in self.record.diff(fm, other):
                     print(S.dim(f"         {key}: {mine} (here) vs {theirs} (remote)"))
+            else:
+                matched += 1
         for eid, fm in remote.items():
             if eid not in by_id and eid not in doomed:
+                remote_only += 1
                 print(
                     f"  {S.ok('>')}{self.record.time(fm)} "
                     f"{self.record.summary(fm)}: {S.dim('remote only')}"
                 )
+        print(
+            f"{S.bold('comparison')} {matched} match Google Health, {different} differ, "
+            f"{missing} missing remotely, {remote_only} remote only"
+        )
         self.status()
         if not (pull or push):
             if not sys.stdin.isatty():
