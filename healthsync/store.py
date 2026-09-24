@@ -261,10 +261,16 @@ class Store:
             data[key] = value
         write_atomic(self.journal, json.dumps(data, indent=2, sort_keys=True))
 
+    def recovery_day(self, default):
+        """Include journal snapshots even if a pending file moved or changed date."""
+        values = [op["fm"] for op in self.operations().values()]
+        values += [fm for _, fm, _ in self.scan()[2]]
+        return min([default] + [dt.date.fromisoformat(self.record.day(fm)) for fm in values])
+
     def earliest_day(self, today):
         # Include indexed dates: deleting the last file in an older folder
         # must not shrink the reconciliation window past its tombstone.
-        days = [today]
+        days = [self.recovery_day(today)]
         by_id, new, orphans, _ = self.scan()
         values = [
             self.record.time(fm) for _, fm, _ in list(by_id.values()) + new + orphans

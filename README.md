@@ -264,8 +264,10 @@ After deleting such a local file, push clears the already-resolved tombstone.
 
 Every create, edit, and replacement is journaled before the remote call. If a
 create may have succeeded but no ID was saved, **run `pull` before retrying**.
-Recovery requires a unique match on both sides and holds ambiguous matches. Widen `--days`
-when recovering an older record. Never clear recovery state merely to retry a
+Recovery requires a unique match on both sides and holds ambiguous matches. Pull
+automatically widens its date range to include pending journal entries and legacy
+unacknowledged creates, and prints the adjusted start date. Ordinary old files do
+not widen a pull. Never clear recovery state merely to retry a
 create: that can duplicate a remote record.
 
 Keep pending-operation files in place until recovery completes. Bulk push pauses

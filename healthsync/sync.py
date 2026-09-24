@@ -303,7 +303,11 @@ class Engine:
     def pull(self, days=7, limit=500, force=False, points=None):
         self.scan()
         self.store.load_index()  # Validate before writing anything.
-        since = (self.clock.today() - dt.timedelta(days=days - 1)).isoformat()
+        requested = self.clock.today() - dt.timedelta(days=days - 1)
+        first = self.store.recovery_day(requested)
+        since = first.isoformat()
+        if first < requested:
+            print(S.dim(f"widened pull to {since} for pending recovery"))
         points = self.remote.fetch(since, limit=limit) if points is None else points
         self.recover(points)
         by_id, _, _ = self.scan()

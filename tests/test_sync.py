@@ -328,6 +328,33 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(e.pull(), 0)
         self.assertEqual(len(e.store.scan()[0]), 1)
 
+    def test_default_pull_includes_old_pending_create(self):
+        e = self.engine
+        fm = self.weight()
+        fm['time'] = '2026-09-02T08:00:00-07:00'
+        e.remote.uncertain_create = True
+        self.assertEqual(e.add(fm), 1)
+        self.assertEqual(e.pull(), 0)
+        self.assertIn(('fetch', '2026-09-02'), e.remote.calls)
+        self.assertFalse(e.store.operations())
+        self.assertEqual(len(e.remote.points), 1)
+        self.assertIn('widened pull to 2026-09-02 for pending recovery', self.output.getvalue())
+
+    def test_default_pull_includes_legacy_orphans_but_not_ordinary_old_files(self):
+        e = self.engine
+        fm = self.weight()
+        fm['time'] = '2026-09-02T08:00:00-07:00'
+        e.add(fm, no_push=True)
+        self.assertEqual(e.pull(), 0)
+        self.assertIn(('fetch', '2026-09-18'), e.remote.calls)
+        path, fm, _ = e.store.scan()[1][0]
+        fm['sync'] = {'created': '2026-09-24T10:00:00-07:00'}
+        write_entry(path, fm)
+        e.remote.put(fm)
+        self.assertEqual(e.pull(), 0)
+        self.assertIn(('fetch', '2026-09-02'), e.remote.calls)
+        self.assertFalse(e.store.scan()[2])
+
     def test_ambiguous_recovery_remains_held(self):
         e = self.engine
         e.remote.lose_id = True
