@@ -12,6 +12,9 @@ Use the local CLI directly. `fsync` remains a food-only alias; `flog` aliases it
 ```
 
 - Food values are totals for the portion eaten; preserve the user's numbers.
+- Every food log must include carbohydrates, fat, and protein. When verified
+  values are unavailable, use reasonable estimates and label them as estimates
+  in the local note; include all three macros in proposed logging commands too.
 - Default meal to `anytime` and amount to one when unspecified.
 - For weight, pass the user's unit explicitly. If none is given and cannot be
   inferred, ask; do not guess pounds versus kilograms.
