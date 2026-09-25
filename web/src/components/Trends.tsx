@@ -21,9 +21,9 @@ function signed(value: number, digits = 2): string {
  * contents on hover, and a conditionally rendered line would change the row's
  * height and shove every chart below it as the pointer moves.
  */
-function Stat({ value, label, hint }: { value: string; label: string; hint?: string }) {
+function Stat({ value, label, hint, tone = "weight" }: { value: string; label: string; hint?: string; tone?: string }) {
   return (
-    <div className="stat">
+    <div className={`stat ${tone}`}>
       <div className="stat-value">{value}</div>
       <div className="stat-label">{label}</div>
       <div className="stat-hint">{hint ?? "\u00A0"}</div>
@@ -70,6 +70,8 @@ export function Trends({ unit, selected, onSelect }: {
   }
   if (!series || !scale || !stats) return <div className="note">Loading…</div>;
 
+  const rate = stats.rate === null ? null : Number(stats.rate.toFixed(2));
+  const direction = rate === null || rate === 0 ? "steady" : rate > 0 ? "up" : "down";
   const shownDay = hoverDay ?? selected;
   const hovered = shownDay ? series.rows.find((row) => row.day === shownDay) : undefined;
   const hoveredTrend = shownDay ? stats.trend.find((point) => point.day === shownDay) : undefined;
@@ -103,18 +105,21 @@ export function Trends({ unit, selected, onSelect }: {
           hint={stats.latest?.provisional ? "provisional" : "seven-day average"}
         />
         <Stat
-          value={stats.rate === null ? "—" : `${signed(stats.rate)} ${series.unit}/wk`}
+          value={rate === null ? "—" : `${direction === "up" ? "↗ " : direction === "down" ? "↘ " : ""}${signed(rate)} ${series.unit}/wk`}
+          tone={direction}
           label={`over ${days} days`}
-          hint={stats.rate === null ? "needs more readings" : "least-squares fit"}
+          hint={rate === null ? "needs more readings" : `${direction === "steady" ? "steady" : `trending ${direction}`} · fitted rate`}
         />
         <Stat
           value={stats.kcal.value === null ? "—" : `${num(stats.kcal.value)} kcal`}
           label="average intake"
+          tone="calories"
           hint={`over ${stats.kcal.days} of ${stats.kcal.of} days logged`}
         />
         <Stat
           value={stats.protein.value === null ? "—" : `${num(stats.protein.value)} g`}
           label="average protein"
+          tone="protein"
           hint={`over ${stats.protein.days} days`}
         />
 

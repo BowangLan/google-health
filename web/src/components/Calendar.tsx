@@ -53,7 +53,7 @@ function Cell({ day, cell, today, selected, target, compact, onSelect }: {
                   arrow would take, and does not read as a nested control inside
                   a cell that is itself a button. U+2212 so signs align. */}
               {delta !== null && delta !== undefined && delta !== 0 && (
-                <i>{delta > 0 ? "+" : "−"}{Math.abs(delta).toFixed(1)}</i>
+                <i className={delta > 0 ? "up" : "down"}>{delta > 0 ? "+" : "−"}{Math.abs(delta).toFixed(1)}</i>
               )}
             </span>
           )}

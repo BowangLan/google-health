@@ -1,5 +1,4 @@
-/* Tokens. --warn is the only second hue: conflicts, recovery, unreadable
-   files, and calories over target. Nothing else may use it. */
+/* Shared nutrient colors and directional cues across charts and daily totals. */
 :root {
   --bg: #ffffff;
   --bg-2: #f6f6f7;
@@ -7,22 +6,22 @@
   --line-2: rgba(0, 0, 0, 0.18);
   --text: #16171a;
   --text-2: #5f646d;
-  --text-3: #9aa0a8;
+  --text-3: #717985;
   --accent: hsl(217 91% 52%);
   --accent-dim: hsl(217 91% 52% / 0.14);
   --warn: hsl(38 92% 42%);
   --warn-dim: hsl(38 92% 42% / 0.22);
   --ok: hsl(142 64% 32%);
   --bad: hsl(2 72% 47%);
-  --radius: 6px;
+  --protein: #087f8c;
+  --carbs: #a36508;
+  --fat: #8855be;
+  --radius: 8px;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
   --shadow: 0 8px 24px rgb(0 0 0 / 0.12);
 
-  /* Chart tokens. Contrast is measured against --bg-2, the card the charts sit
-     on, not against the page. --viz-over is the warm pole of one diverging
-     scale whose neutral midpoint is the drawn target line; it is the only
-     second hue allowed, and only where a target exists. */
+  /* Chart marks share the nutrient palette in both themes. */
   --viz-grid: #e6e7e9;
   --viz-axis: #d4d6d9;
   --viz-ink-2: #5f646d;
@@ -39,7 +38,10 @@
     --line-2: rgba(255, 255, 255, 0.18);
     --text: #ededed;
     --text-2: #9096a0;
-    --text-3: #5f656e;
+    --text-3: #9099a8;
+    --protein: #43c6c0;
+    --carbs: #edb556;
+    --fat: #bc98ee;
     --accent: hsl(217 91% 64%);
     --accent-dim: hsl(217 91% 64% / 0.18);
     --warn: hsl(38 92% 58%);
@@ -100,7 +102,7 @@ button { font: inherit; cursor: pointer; }
   border-bottom: 1px solid var(--line);
 }
 
-.wordmark { font-weight: 600; letter-spacing: -0.015em; }
+.wordmark { color: var(--accent); font-weight: 600; letter-spacing: -0.015em; }
 .monthnav { display: flex; align-items: center; gap: 4px; }
 .monthnav h1 { font-size: 14px; min-width: 132px; text-align: center; }
 .monthstats { color: var(--text-3); font-size: 12px; }
@@ -242,7 +244,7 @@ button { font: inherit; cursor: pointer; }
   gap: 2px;
 }
 .cell-bar b { background: var(--accent); display: block; }
-.cell-bar b.over { background: var(--warn-dim); }
+.cell-bar b.over { background: var(--warn); }
 
 .cell-state {
   position: absolute;
@@ -297,7 +299,7 @@ button { font: inherit; cursor: pointer; }
   margin: 7px 0 9px;
 }
 .totals-bar b { background: var(--accent); }
-.totals-bar b.over { background: var(--warn-dim); }
+.totals-bar b.over { background: var(--warn); }
 .macros { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
 .macros b { font-weight: 500; color: var(--text); }
 
@@ -487,7 +489,7 @@ input.scaled { color: var(--accent); }
   font-size: 12px; padding: 5px 9px;
 }
 .seg button + button { border-left: 1px solid var(--line); }
-.seg button[aria-pressed="true"] { background: var(--accent-dim); color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--accent-dim); color: var(--accent); }
 
 .results { border-top: 1px solid var(--line); }
 .result {
@@ -714,20 +716,31 @@ input.scaled { color: var(--accent); }
 .trends { padding: 14px 18px 28px; display: grid; gap: 12px; }
 .trends-bar { display: flex; align-items: center; gap: 12px; }
 
-/* Fixed height and fixed slot widths: the contents swap on hover, so anything
-   that reflows here moves every chart underneath it. */
+/* Stable summary slots wrap with the window, never with hover content. */
 .stats {
   display: flex;
-  gap: 28px;
-  align-items: flex-start;
+  gap: 10px;
+  align-items: stretch;
   padding: 2px 2px 10px;
   border-bottom: 1px solid var(--line);
-  height: 76px;
-  overflow: hidden;
+  min-height: 96px;
+  flex-wrap: wrap;
 }
-.stat { min-width: 148px; flex: none; }
+.stat {
+  --stat-color: var(--accent);
+  min-width: 148px; flex: 1 0 auto; padding: 8px 10px;
+  border-radius: var(--radius);
+  border-top: 2px solid var(--stat-color);
+  background: color-mix(in srgb, var(--stat-color) 7%, var(--bg));
+}
+.stat.up { --stat-color: var(--bad); }
+.stat.down { --stat-color: var(--ok); }
+.stat.steady { --stat-color: var(--text-2); }
+.stat.calories { --stat-color: var(--carbs); }
+.stat.protein { --stat-color: var(--protein); }
+.stat .stat-value { color: var(--stat-color); }
 .stat-value {
-  font-size: 25px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.3;
@@ -736,9 +749,15 @@ input.scaled { color: var(--accent); }
 .stat-label { color: var(--text-2); font-size: 12px; line-height: 1.35; white-space: nowrap; }
 .stat-hint { color: var(--text-3); font-size: 11px; line-height: 1.35; white-space: nowrap; }
 .dayread {
+  /* Hover content must never contribute to flex line sizing. */
+  flex: 0 0 340px;
+  width: 340px;
+  height: 72px;
+  contain: inline-size;
+  overflow: hidden;
   margin-left: auto;
   align-self: stretch;
-  min-width: 250px;
+  min-width: 0;
   padding-left: 20px;
   border-left: 1px solid var(--line);
   display: flex;
@@ -746,12 +765,19 @@ input.scaled { color: var(--accent); }
   justify-content: center;
   gap: 2px;
 }
-.dayread-head { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.dayread-head { font-size: 12px; line-height: 18px; color: var(--text-2); white-space: nowrap; }
+.dayread-head, .dayread > .stat-hint, .dayread-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dayread > .stat-hint { height: 15px; flex: none; }
 .dayread-row {
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   font-family: var(--mono);
   font-size: 14px;
+  line-height: 21px;
   white-space: nowrap;
 }
 .dayread-row span:first-child { color: var(--text); }
@@ -789,17 +815,33 @@ input.scaled { color: var(--accent); }
 /* A gap is absence, so it reads as bare surface, not as a painted block. */
 .viz-gap { fill: var(--viz-demote); opacity: 0.07; }
 
-/* Four ordinal steps of one hue: the stack is a decomposition of one total,
-   not four competing series, so it does not need four hues. */
-.viz-seg.protein { fill: var(--viz-accent); }
-.viz-seg.carbs { fill: var(--viz-accent); opacity: 0.55; }
-.viz-seg.fat { fill: var(--viz-accent); opacity: 0.28; }
-.viz-seg.unaccounted { fill: var(--viz-demote); opacity: 0.35; }
-.viz-over { fill: var(--viz-over); }
+/* Nutrient identity stays consistent in charts, legends and daily totals. */
+.viz-seg.protein { fill: var(--protein); }
+.viz-seg.carbs { fill: var(--carbs); }
+.viz-seg.fat { fill: var(--fat); }
+.viz-seg.unaccounted { fill: var(--viz-demote); opacity: 0.55; }
+.viz-seg { transition: filter 120ms ease; }
+.viz-over { fill: var(--viz-over); fill-opacity: 0.22; stroke: var(--warn); stroke-width: 1; }
 .viz-unlogged { fill: var(--viz-demote); opacity: 0.45; }
-.viz-col.hovered .viz-seg { opacity: 1; }
-.viz-col.hovered .viz-seg.carbs { opacity: 0.7; }
-.viz-col.hovered .viz-seg.fat { opacity: 0.45; }
+.viz-col.hovered .viz-seg, .viz-seg.hovered { filter: brightness(1.2); }
+.viz-target { stroke-dasharray: 4 3; }
+.macro-legend { display: inline-flex; gap: 10px; flex-wrap: wrap; margin-left: 12px; }
+.macro-legend span { display: inline-flex; gap: 4px; align-items: center; }
+.macro-legend span::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: currentColor; }
+.macro-legend .protein, .macros .protein, .macros .protein b { color: var(--protein); }
+.macro-legend .carbs, .macros .carbs, .macros .carbs b { color: var(--carbs); }
+.macro-legend .fat, .macros .fat, .macros .fat b { color: var(--fat); }
+.macro-legend .over { color: var(--warn); }
+.macros > span { padding: 3px 6px; border-radius: 5px; background: color-mix(in srgb, currentColor 8%, transparent); }
+.totals-unit { font-size: 12px; font-weight: 400; color: var(--text-2); }
+.over-target .totals-of { color: var(--warn); }
+.weight-delta { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, currentColor 10%, transparent); }
+.weight-delta.up, .cell-weight i.up { color: var(--bad); }
+.weight-delta.down, .cell-weight i.down { color: var(--ok); }
+.pill.clean { color: var(--ok); }
+.pill.clean .dot { display: block; background: var(--ok); }
+button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+
 
 
 /* Compact calendar: in the dashboard it is a navigator, so a cell carries the
@@ -821,4 +863,22 @@ input.scaled { color: var(--accent); }
   .trends { padding: 12px 14px 24px; }
   .stats { gap: 18px; }
   .stat { min-width: 128px; }
+}
+
+/* Keep the summary visible and put the day details below it on small screens. */
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  #root { height: auto; min-height: 100%; }
+  .dash { display: flex; flex-direction: column; }
+  .analysis, .side { overflow: visible; }
+  .side { border-left: 0; border-top: 1px solid var(--line); }
+  .side .rail { position: static; width: auto; max-width: none; box-shadow: none; }
+  .header { height: auto; min-height: 48px; flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+  .header-right { flex-wrap: wrap; }
+  .stats { gap: 8px; }
+  .stat { min-width: 135px; }
+  .dayread { flex-basis: 100%; width: 100%; min-width: 0; padding: 6px 10px; border-left: 0; }
+  .viz-head { flex-wrap: wrap; gap: 3px 10px; }
+  .macro-legend { display: flex; margin: 4px 0; }
+  .trends-bar { flex-wrap: wrap; }
 }

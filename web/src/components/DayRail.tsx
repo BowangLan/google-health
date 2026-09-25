@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { MEALS, MEAL_NAME, clock, num, parseDay, relativeDay } from "../lib/format";
 import type { DayView, FoodRow, Kind, Targets, WeightRow } from "../lib/types";
 import { DeleteConfirm, EditRecord } from "./EditRecord";
@@ -12,8 +12,8 @@ function Totals({ totals, count, target }: {
 }) {
   const ratio = target ? Number(totals.kcal) / target : 0;
   return (
-    <div className="totals">
-      <div className="totals-kcal">{num(totals.kcal) ?? "0"}</div>
+    <div className={`totals${target && ratio > 1 ? " over-target" : ""}`}>
+      <div className="totals-kcal">{num(totals.kcal) ?? "0"}<span className="totals-unit"> kcal</span></div>
       {target ? (
         <>
           <div className="totals-of">{`of ${num(target)} · ${Math.round(ratio * 100)}%`}</div>
@@ -26,9 +26,9 @@ function Totals({ totals, count, target }: {
         <div className="totals-of">{count} {count === 1 ? "entry" : "entries"}</div>
       )}
       <div className="macros">
-        <span>P <b>{num(totals.protein, 1) ?? "0"}</b></span>
-        <span>C <b>{num(totals.carbs, 1) ?? "0"}</b></span>
-        <span>F <b>{num(totals.fat, 1) ?? "0"}</b></span>
+        <span className="protein">P <b>{num(totals.protein, 1) ?? "0"}</b></span>
+        <span className="carbs">C <b>{num(totals.carbs, 1) ?? "0"}</b></span>
+        <span className="fat">F <b>{num(totals.fat, 1) ?? "0"}</b></span>
         {totals.fiber ? <span>Fib <b>{num(totals.fiber, 1)}</b></span> : null}
         {totals.sugar ? <span>Sug <b>{num(totals.sugar, 1)}</b></span> : null}
       </div>
@@ -40,7 +40,7 @@ function Row({ kind, record, title, meta, figure, open, setOpen, onAgain, onChan
   kind: Kind;
   record: FoodRow | WeightRow;
   title: string;
-  meta: string;
+  meta: ReactNode;
   figure?: string | null;
   open: Open;
   setOpen: (open: Open) => void;
@@ -207,8 +207,9 @@ export function DayRail({
               kind="weight"
               record={point}
               title={`${num(point.value, 1)} ${point.unit}`}
-              meta={[clock(point.time), delta ? `${Number(delta) > 0 ? "+" : ""}${delta}` : null, point.remote_note]
-                .filter(Boolean).join(" · ")}
+              meta={<>{clock(point.time)}{delta !== null && <span className={`weight-delta ${Number(delta) > 0 ? "up" : Number(delta) < 0 ? "down" : "steady"}`}>
+                {Number(delta) > 0 ? "↗ +" : Number(delta) < 0 ? "↘ −" : "→ "}{Math.abs(Number(delta)).toFixed(1)} {point.unit}
+              </span>}{point.remote_note && ` · ${point.remote_note}`}</>}
               open={open}
               setOpen={setOpen}
               onChanged={onChanged}

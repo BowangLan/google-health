@@ -38,7 +38,18 @@ export function IntakeChart({ series, scale, hoverDay, onHover, pinnedDay, onPic
   return (
     <ChartFrame
       title="Calories"
-      subtitle={coverage}
+      subtitle={
+        <>
+          {coverage}
+          <span className="macro-legend">
+            <span className="protein">Protein</span>
+            <span className="carbs">Carbs</span>
+            <span className="fat">Fat</span>
+            <span className="unaccounted">Other</span>
+            {target !== null && <span className="over">Over target</span>}
+          </span>
+        </>
+      }
       scale={scale}
       height={HEIGHT}
       pad={PAD}
@@ -159,7 +170,7 @@ export function NutrientChart({ series, scale, hoverDay, onHover, pinnedDay, onP
               return <rect key={row.day} className="viz-unlogged" x={x} y={bottom - 1.5} width={width} height={1.5} />;
             }
             return (
-              <rect key={row.day} className={`viz-seg protein${hoverDay === row.day ? " hovered" : ""}`}
+              <rect key={row.day} className={`viz-seg ${field}${hoverDay === row.day ? " hovered" : ""}`}
                 x={x} y={y(value)} width={width} height={Math.max(bottom - y(value), 0.5)} />
             );
           })}
