@@ -1,0 +1,10 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml>=6"]
+# ///
+"""Serve the local web interface for hsync."""
+from healthsync.web import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
