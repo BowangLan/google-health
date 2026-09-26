@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fsync — sync/push/pull review</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex) > * { min-width: 0; }
+  :where(p, h1, h2, h3, h4, li, dd, td, th, .badge) { overflow-wrap: anywhere; }
+  :where(img, svg) { max-width: 100%; height: auto; }
+  .eyebrow { letter-spacing: .14em; text-transform: uppercase; font-size: .68rem; font-weight: 600; }
+  .rule { height: 1px; background: color-mix(in oklch, var(--color-base-content) 12%, transparent); }
+  .cmd { background: var(--color-base-300); border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent);
+         border-radius: .6rem; padding: .85rem 1rem; overflow-x: auto; font-size: .78rem; line-height: 1.65; }
+  .cmd code { white-space: pre; display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .cmd .c { color: color-mix(in oklch, var(--color-base-content) 42%, transparent); }
+  .cmd .g { color: #7ddc8a; } .cmd .y { color: #e8c468; } .cmd .r { color: #f07a7a; }
+  .fid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; font-size: .72rem;
+         letter-spacing: .04em; padding: .16rem .45rem; border-radius: .35rem; flex: none; }
+  .fid-crit { background: color-mix(in oklch, #f07a7a 22%, transparent); color: #ffb0b0; }
+  .fid-med  { background: color-mix(in oklch, #e8c468 20%, transparent); color: #ecd08c; }
+  .fid-nit  { background: color-mix(in oklch, var(--color-base-content) 12%, transparent); opacity: .8; }
+  .loc { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .74rem; opacity: .7; }
+  .codewrap { border-radius: .6rem; overflow: hidden; font-size: .8rem; }
+  .codewrap :where(pre, code) { font-size: .78rem; }
+  table.rev td, table.rev th { vertical-align: top; }
+  .verdict-tile { border: 1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent); }
+</style>
+</head>
+<body class="bg-base-200 text-base-content">
+<main class="mx-auto max-w-5xl p-5 lg:p-10">
+
+  <header class="mb-9">
+    <p class="eyebrow text-primary mb-3">fsync · code review · 24 Sep 2026 · <span class="text-success">all 20 fixed</span></p>
+    <h1 class="text-4xl lg:text-5xl font-bold leading-tight mb-4">The sync model was sound.<br>Its bookkeeping wasn't.</h1>
+    <p class="text-lg opacity-80 max-w-3xl">
+      The design — file&nbsp;is&nbsp;truth, digest&nbsp;for&nbsp;dirt, index&nbsp;for&nbsp;deletes, create-then-delete for edits — is
+      the right shape for an API with no working update, and the comments earn their keep. The problems were all in one place:
+      <strong>the index was rebuilt wholesale from disk</strong>, which quietly destroyed the one piece of state that only the
+      index holds — <em>“you deleted this”</em>. Three bugs below all came from that.
+    </p>
+    <div class="alert alert-success mt-5 text-sm">
+      <span><strong>All 20 findings are fixed in <code>fsync</code>.</strong> Every one was reproduced first, then
+      re-tested after the fix: <strong>36 assertions, 0 failures</strong>, covering each bug plus the normal
+      pull / push / add / clone / tidy / total flows. Verified live afterwards against your real data —
+      28 remote, 28 local, in sync, nothing pending, index migrated byte-identical.
+      <strong>The docs are updated too</strong>: <code>README.md</code>, <code>CLAUDE.md</code> (and
+      <code>AGENTS.md</code> through its symlink) and <code>docs/fsync-flows.html</code>, with every new
+      claim checked against the code's real output.</span>
+    </div>
+  </header>
+
+  <section class="grid gap-3 sm:grid-cols-3 mb-10">
+    <div class="verdict-tile rounded-box bg-base-100 p-4">
+      <p class="text-3xl font-bold" style="color:#f07a7a">3</p>
+      <p class="eyebrow opacity-70 mt-1">Data-loss bugs · fixed</p>
+      <p class="text-sm opacity-70 mt-2">Each reproduced against the real code, then re-tested after the fix.</p>
+    </div>
+    <div class="verdict-tile rounded-box bg-base-100 p-4">
+      <p class="text-3xl font-bold" style="color:#e8c468">7</p>
+      <p class="eyebrow opacity-70 mt-1">Correctness / robustness · fixed</p>
+      <p class="text-sm opacity-70 mt-2">Wrong under pagination, crashes, or silently misleading output.</p>
+    </div>
+    <div class="verdict-tile rounded-box bg-base-100 p-4">
+      <p class="text-3xl font-bold opacity-80">10</p>
+      <p class="eyebrow opacity-70 mt-1">Cleanliness · fixed</p>
+      <p class="text-sm opacity-70 mt-2">Dead code, duplicated writes, inconsistent exit semantics.</p>
+    </div>
+  </section>
+
+  <!-- ─────────── summary table ─────────── -->
+  <section class="mb-12">
+    <h2 class="text-2xl font-bold mb-1">Everything at a glance</h2>
+    <p class="opacity-75 mb-4 max-w-3xl">Sorted by what it costs you. The first three lose data without saying a word.</p>
+    <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+      <table class="table table-sm rev">
+        <thead>
+          <tr><th>#</th><th>Finding</th><th>Where</th><th>Was</th><th>Now</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="fid fid-crit">C1</span></td>
+            <td><strong>Any pull or push forgets a pending deletion.</strong> <code>save_index()</code> rebuilds the index from the files on disk, so the deleted entry's id — the only record that it ever existed — is dropped. Next pull recreates it.</td>
+            <td class="loc">fsync:496, 667, 922</td>
+            <td><span class="badge badge-error badge-sm">resurrects data</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Tombstones survive <code>save_index</code>; only a real delete, a restore, or a confirmed-gone entry clears one.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-crit">C2</span></td>
+            <td><strong><code>pull --force</code> does not restore held deletions</strong>, though <code>pull</code> tells you it will. The hold check never consults <code>args.force</code>; the entry is skipped, then the index is wiped. Two pulls are needed.</td>
+            <td class="loc">fsync:629, 666</td>
+            <td><span class="badge badge-error badge-sm">message lies</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>The hold now checks <code>args.force</code> and falls through, restoring the file in one step.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-crit">C3</span></td>
+            <td><strong><code>push</code> has no conflict check.</strong> <code>sync</code> carefully detects “changed on BOTH sides” and refuses to pick — then <code>push</code> pushes every dirty file, deleting the remote entry that held the other side's change.</td>
+            <td class="loc">fsync:875, 1159</td>
+            <td><span class="badge badge-error badge-sm">silent clobber</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>push</code> reads the remote window first and refuses conflicted entries; <code>--force</code> overrides.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M1</span></td>
+            <td><strong>Pagination is warned about, not followed.</strong> Past <code>--limit</code>, <code>sync</code> reports every unreturned local entry as <span class="text-error">“gone from Google Health”</span> and <code>pull</code> silently skips real updates.</td>
+            <td class="loc">fsync:575, 1152</td>
+            <td><span class="badge badge-warning badge-sm">false alarms</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>fetch_remote</code> follows <code>--page-token</code> to the last page.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M2</span></td>
+            <td><code>sync --push</code> where the <em>only</em> change is a conflict does nothing and exits&nbsp;0 — <code>n_push</code> excludes conflicts, so the push branch never runs. Looks like success.</td>
+            <td class="loc">fsync:1299</td>
+            <td><span class="badge badge-warning badge-sm">silent no-op</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>The push branch runs on conflicts too, reports each one, and exits non-zero.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M3</span></td>
+            <td>Index and entry writes are <strong>not atomic</strong>, and <code>load_index()</code> swallows every exception into <code>{}</code>. A crash mid-write turns into “no deletions pending”, and the next save makes it permanent.</td>
+            <td class="loc">fsync:488, 502</td>
+            <td><span class="badge badge-warning badge-sm">silent loss</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>New <code>write_atomic</code> (tmp + <code>os.replace</code>) for index and entries; a corrupt index now warns.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M4</span></td>
+            <td>Default index lives at <code>FOOD_DIR.parent</code>, so two food folders under one parent <strong>share an index</strong> — each reports the other's entries as deleted.</td>
+            <td class="loc">fsync:180</td>
+            <td><span class="badge badge-warning badge-sm">footgun</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>The index lives inside <code>food/</code>, with a one-time move of the old file.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M5</span></td>
+            <td>A hand-edited unquoted <code>start:</code> is parsed by YAML as a <em>datetime object</em>, whose <code>str()</code> uses a space, not <code>T</code> — so its digest never matches the remote's and <code>sync</code> shows a phantom change forever. <strong>CLAUDE.md tells you to hand-edit exactly this field.</strong></td>
+            <td class="loc">fsync:322 · CLAUDE.md</td>
+            <td><span class="badge badge-warning badge-sm">phantom diff</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>read_entry</code> coerces a YAML datetime back to an ISO string.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M6</span></td>
+            <td><code>add --at 25:00</code> passes the regex and raises an uncaught <code>ValueError</code> traceback instead of a <code>die()</code> message. Same for <code>:99</code>.</td>
+            <td class="loc">fsync:936</td>
+            <td><span class="badge badge-warning badge-sm">traceback</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Hour and minute are range-checked; <code>die()</code> instead of a traceback.</td>
+          </tr>
+          <tr>
+            <td><span class="fid fid-med">M7</span></td>
+            <td>A push that deletes <em>and</em> creates calls <code>access_token()</code> twice — two <code>ghealth auth refresh</code> + <code>export</code> subprocess pairs per run.</td>
+            <td class="loc">fsync:888, 913</td>
+            <td><span class="badge badge-sm">slow</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>access_token</code> caches for the process — one refresh/export pair per run.</td>
+          </tr>
+          <tr><td><span class="fid fid-nit">N1</span></td><td><code>INDEX.unlink()</code> on <code>--force</code> is dead — <code>save_index()</code> on the next line rewrites the file wholesale regardless.</td><td class="loc">fsync:666</td><td><span class="badge badge-ghost badge-sm">dead</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Removed.</td></tr>
+          <tr><td><span class="fid fid-nit">N2</span></td><td>The careful incremental index write after a successful delete is immediately overwritten by <code>save_index(scan()[0])</code> whenever other work exists. Two mechanisms, one survives.</td><td class="loc">fsync:894, 922</td><td><span class="badge badge-ghost badge-sm">duplicated</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Removed; one <code>save_index(drop=…)</code> does it.</td></tr>
+          <tr><td><span class="fid fid-nit">N3</span></td><td><code>fetch_remote(quiet=…)</code> — the parameter has no caller.</td><td class="loc">fsync:562</td><td><span class="badge badge-ghost badge-sm">dead</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Parameter removed.</td></tr>
+          <tr><td><span class="fid fid-nit">N4</span></td><td><code>rc |= cmd_pull(...)</code> — bitwise OR on exit codes. Fine for 0/1, wrong the moment a command returns 2.</td><td class="loc">fsync:1307</td><td><span class="badge badge-ghost badge-sm">fragile</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>max()</code> on exit codes.</td></tr>
+          <tr><td><span class="fid fid-nit">N5</span></td><td><code>scan()</code> runs two to three times per command, and <code>sync</code> re-fetches the whole window inside <code>cmd_pull</code> after having just fetched it.</td><td class="loc">fsync:667, 1296</td><td><span class="badge badge-ghost badge-sm">wasteful</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br><code>sync</code> hands its fetched window to <code>cmd_pull</code>.</td></tr>
+          <tr><td><span class="fid fid-nit">N6</span></td><td><code>replace_entry()</code> returns <code>False</code> when only the <em>old</em> entry's delete failed — printing <code>warn</code> while being counted as a failed push. Pick one.</td><td class="loc">fsync:795</td><td><span class="badge badge-ghost badge-sm">inconsistent</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Marked <code>part</code> in red, with a comment on why it counts as failed.</td></tr>
+          <tr><td><span class="fid fid-nit">N7</span></td><td><code>.last-create-response.json</code> is written to <code>HERE</code>, ignoring the configured food/index directories — breaks if the script sits somewhere read-only.</td><td class="loc">fsync:761, 838</td><td><span class="badge badge-ghost badge-sm">inconsistent</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Written beside the index.</td></tr>
+          <tr><td><span class="fid fid-nit">N8</span></td><td><code>relocate()</code> silently no-ops on a name collision; <code>tidy</code> then counts that file as “already in place”.</td><td class="loc">fsync:279, 1310</td><td><span class="badge badge-ghost badge-sm">silent</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>A refused move prints <code>keep … is taken</code>.</td></tr>
+          <tr><td><span class="fid fid-nit">N9</span></td><td><code>INDEX</code>'s module default is declared 300 lines away from <code>FOOD_DIR</code> and <code>GHEALTH</code>, though <code>configure()</code> owns all three.</td><td class="loc">fsync:485</td><td><span class="badge badge-ghost badge-sm">layout</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Declared with <code>FOOD_DIR</code> and <code>GHEALTH</code>.</td></tr>
+          <tr><td><span class="fid fid-nit">N10</span></td><td>Orphan reconciliation builds <code>remote_by_key</code> as a dict — two entries with the same time, name and kcal silently collapse to one, adopting the wrong id.</td><td class="loc">fsync:619</td><td><span class="badge badge-ghost badge-sm">edge</span></td><td class="text-sm"><span class="badge badge-success badge-sm mb-1">fixed</span><br>Ambiguous matches are listed and left for you; nothing is adopted on a guess.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─────────── C1 ─────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="fid fid-crit">C1</span>
+      <h2 class="text-2xl font-bold">A deletion survives exactly one command</h2>
+    </div>
+    <p class="opacity-80 max-w-3xl mb-5">
+      Deleting a file is the only way to delete an entry, and the index is the only thing that remembers you did it.
+      Both <code>cmd_pull</code> and <code>cmd_push</code> end by calling <code>save_index(scan()[0])</code>, which
+      derives the whole index from the files that exist <em>now</em>. The deleted entry has no file, so its id is
+      dropped — and a dropped id is indistinguishable from an entry you never had.
+    </p>
+
+    <div class="grid gap-4 lg:grid-cols-2 mb-5">
+      <div>
+        <p class="eyebrow opacity-60 mb-2">The rebuild · fsync:496</p>
+        <div id="c1-code" class="codewrap"></div>
+      </div>
+      <div>
+        <p class="eyebrow opacity-60 mb-2">Reproduced · delete a file, then pull</p>
+        <div class="cmd"><code><span class="c"># file deleted, nothing pushed yet</span>
+pending deletes before pull: ['AAA']
+
+$ fsync pull
+  <span class="y">held</span>  2026-09-24/1200--x--AAA.md
+        deleted locally; run 'fsync push' to delete it
+
+pending deletes AFTER pull: <span class="r">[]</span>
+
+$ fsync pull   <span class="c"># the very next one</span>
+   <span class="g">new</span>  2026-09-24/1200--x--AAA.md  <span class="r">← it's back</span></code></div>
+      </div>
+    </div>
+
+    <div class="alert alert-error mb-5 text-sm">
+      <span><strong>Same bug via push.</strong> Decline the delete prompt while any other entry is pending, and the
+      <code>save_index(scan()[0])</code> at the end of the push wipes the deletion too — <em>“files stay gone locally
+      but the remote entries remain”</em> is true, but it will never ask again.</span>
+    </div>
+
+    <p class="eyebrow opacity-60 mb-2">Fix · keep unresolved deletions in the index</p>
+    <div id="c1-diff" class="codewrap"></div>
+    <p class="text-sm opacity-70 mt-3 max-w-3xl">
+      With this, <code>save_index</code> is additive for tombstones and only <code>delete_remote</code> succeeding —
+      or an explicit <code>--force</code> — clears one. The incremental write at fsync:894 can then go (N2), and so can
+      the <code>unlink</code> at fsync:666 (N1).
+    </p>
+  </section>
+
+  <!-- ─────────── C2 ─────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="fid fid-crit">C2</span>
+      <h2 class="text-2xl font-bold"><code>pull --force</code> restores nothing</h2>
+    </div>
+    <p class="opacity-80 max-w-3xl mb-5">
+      Two places promise it: the hold message in <code>cmd_pull</code> and the cancellation message in
+      <code>cmd_push</code>. The hold branch never checks <code>args.force</code> — it <code>continue</code>s before
+      anything can be written, and the <code>unlink</code> that <em>is</em> guarded by <code>--force</code> runs after
+      the loop, too late to matter.
+    </p>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div>
+        <p class="eyebrow opacity-60 mb-2">The hold branch · fsync:629</p>
+        <div id="c2-code" class="codewrap"></div>
+      </div>
+      <div>
+        <p class="eyebrow opacity-60 mb-2">Reproduced</p>
+        <div class="cmd"><code>$ fsync pull --force
+  <span class="y">held</span>  2026-09-24/1200--x--AAA.md
+        deleted locally; run 'fsync push' to delete it
+        remotely, or 'fsync pull --force' to restore it
+
+files after --force: <span class="r">[]</span>   <span class="c"># nothing restored</span></code></div>
+        <p class="text-sm opacity-70 mt-3">
+          The entry does come back — on the <em>next</em> pull, because the index was wiped in the meantime. A
+          two-step accident, not the documented behaviour.
+        </p>
+      </div>
+    </div>
+    <p class="eyebrow opacity-60 mb-2 mt-5">Fix · one line</p>
+    <div id="c2-diff" class="codewrap"></div>
+  </section>
+
+  <!-- ─────────── C3 ─────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="fid fid-crit">C3</span>
+      <h2 class="text-2xl font-bold">Conflict detection that push never reads</h2>
+    </div>
+    <p class="opacity-80 max-w-3xl mb-5">
+      <code>sync_diff</code> does real work to notice that both sides moved, and <code>show_sync_diff</code> says so in
+      red rather than picking a winner. But <code>cmd_push</code> builds its work list from <code>is_dirty(fm)</code>
+      alone — it never fetches the remote, so it cannot know. Push a conflicted entry and the remote change is deleted
+      as part of the create-then-delete replacement, with an <code class="text-success">ok</code> next to it.
+    </p>
+    <div class="grid gap-4 lg:grid-cols-2 mb-5">
+      <div>
+        <p class="eyebrow opacity-60 mb-2">The work list · fsync:874</p>
+        <div id="c3-code" class="codewrap"></div>
+      </div>
+      <div>
+        <p class="eyebrow opacity-60 mb-2">Reproduced · local 150, remote 120</p>
+        <div class="cmd"><code>$ fsync sync
+   <span class="r">!</span>  1200--x--AAA.md  changed on BOTH sides
+        kcal: 150  (here)  vs  120  (remote)
+
+$ fsync push
+    <span class="g">ok</span>  1200--x--NEW1.md  replaced AAA
+pushed 1 ok, 0 failed
+
+API calls: POST kcal=150
+           POST :batchDelete AAA   <span class="r">← remote's 120 is gone</span></code></div>
+      </div>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="card card-border bg-base-100"><div class="card-body gap-2 p-5">
+        <h3 class="font-bold">Cheap fix</h3>
+        <p class="text-sm opacity-80">Have <code>push</code> refuse any entry whose stored <code>sync.digest</code> is
+        older than what a <code>sync</code> last saw, i.e. record the last-seen remote digest in the index and compare.
+        No extra fetch.</p>
+      </div></div>
+      <div class="card card-border bg-base-100"><div class="card-body gap-2 p-5">
+        <h3 class="font-bold">Honest fix</h3>
+        <p class="text-sm opacity-80">Fetch the affected window inside <code>cmd_push</code> before replacing anything,
+        and hard-fail conflicted entries with the same red text <code>sync</code> uses. One request, and
+        <code>push</code> stops being the one command that can destroy remote data unknowingly.</p>
+      </div></div>
+    </div>
+    <p class="text-sm opacity-70 mt-4 max-w-3xl">
+      Related: <span class="fid fid-med">M2</span> — because <code>n_push</code> deliberately excludes conflicts,
+      <code>sync --push</code> on a conflict-only diff skips the push branch entirely and exits 0 without a word.
+      Whichever fix you pick, that branch needs to say “1 conflicted, resolve by hand” and return non-zero.
+    </p>
+  </section>
+
+  <!-- ─────────── M5 ─────────── -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="fid fid-med">M5</span>
+      <h2 class="text-2xl font-bold">The YAML timestamp trap, which your own docs walk into</h2>
+    </div>
+    <p class="opacity-80 max-w-3xl mb-5">
+      <code>write_entry</code> is safe: PyYAML quotes <code>'2026-09-23T16:46:17-07:00'</code> so it reads back as a
+      string. A human — or an agent following <code>CLAUDE.md</code>'s “set <code>start</code> to the requested date”
+      — writes it unquoted, and YAML resolves it to a <code>datetime</code>. <code>digest()</code> stringifies with
+      <code>default=str</code>, which renders a datetime with a space instead of <code>T</code>.
+    </p>
+    <div class="cmd mb-4"><code>digest(string start)   = 118b91e891e03b8f
+digest(datetime start) = ca6668e02f532b89      <span class="r">← same instant, different hash</span>
+yaml.safe_load("start: 2026-09-20T12:00:00-07:00")["start"]
+  -> datetime.datetime(2026, 9, 20, 12, 0, tzinfo=...)</code></div>
+    <p class="opacity-80 max-w-3xl">
+      The local digest is self-consistent, so nothing looks dirty — but it never matches
+      <code>digest(remote_to_fm(dp))</code>, so <code>sync</code> reports the entry as changed in Google Health on every
+      run, forever, with a diff that reads <code>start: 2026-09-20 12:00:00-07:00 -&gt; 2026-09-20T12:00:00-07:00</code>.
+      One-line fix: coerce in <code>read_entry</code>, next to the other normalisation.
+    </p>
+    <div id="m5-diff" class="codewrap mt-4"></div>
+  </section>
+
+  <!-- ─────────── ordering ─────────── -->
+  <section class="mb-6">
+    <h2 class="text-2xl font-bold mb-1">What shipped, in order</h2>
+    <p class="opacity-75 mb-5 max-w-3xl">227 insertions, 63 deletions in <code>fsync</code>, plus the doc updates that follow from them.</p>
+    <ol class="flex flex-col gap-3">
+      <li class="card card-border bg-base-100"><div class="card-body gap-1 p-5">
+        <p class="font-bold">1 · Tombstones survive <code>save_index</code> <span class="fid fid-crit ml-1">C1</span></p>
+        <p class="text-sm opacity-75">Everything else about deletion is already right; this is the piece that leaks. Removes N1 and N2 on the way.</p>
+      </div></li>
+      <li class="card card-border bg-base-100"><div class="card-body gap-1 p-5">
+        <p class="font-bold">2 · <code>push</code> knows about conflicts <span class="fid fid-crit ml-1">C3</span> <span class="fid fid-med">M2</span></p>
+        <p class="text-sm opacity-75">The only path that can destroy data the user never saw.</p>
+      </div></li>
+      <li class="card card-border bg-base-100"><div class="card-body gap-1 p-5">
+        <p class="font-bold">3 · <code>--force</code> honoured <span class="fid fid-crit ml-1">C2</span></p>
+        <p class="text-sm opacity-75">Either fix the branch or stop printing the two messages that advertise it.</p>
+      </div></li>
+      <li class="card card-border bg-base-100"><div class="card-body gap-1 p-5">
+        <p class="font-bold">4 · Pagination followed, timestamps coerced, <code>--at</code> validated <span class="fid fid-med ml-1">M1</span> <span class="fid fid-med">M5</span> <span class="fid fid-med">M6</span></p>
+        <p class="text-sm opacity-75">Three small, independent edits that each remove a class of wrong output.</p>
+      </div></li>
+      <li class="card card-border bg-base-100"><div class="card-body gap-1 p-5">
+        <p class="font-bold">5 · Atomic writes, one token per run, the nits <span class="fid fid-med ml-1">M3</span> <span class="fid fid-med">M7</span> <span class="fid fid-nit">N1–N10</span></p>
+        <p class="text-sm opacity-75">Housekeeping. <code>tmp + os.replace</code> for both the index and entry files.</p>
+      </div></li>
+    </ol>
+  </section>
+
+  <div class="rule my-8"></div>
+  <p class="text-sm opacity-60">
+    Reviewed against <code>fsync</code> @ 1469 lines, now 1630. Every finding was reproduced by executing the real
+    module against a stubbed API, fixed, and re-tested — 36 assertions, 0 failures — then checked live against the
+    real account. <strong>Not committed.</strong>
+  </p>
+
+</main>
+
+<script type="module">
+  import { File, FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+  const options = { theme: { light: "github-light", dark: "vitesse-dark" }, themeType: "dark", overflow: "wrap" };
+  const f = (name, contents) => ({ name, contents });
+  const show = (sel, file) => new File(options).render({ containerWrapper: document.querySelector(sel), file });
+  const diff = (sel, oldF, newF) => new FileDiff({ ...options, diffStyle: "unified" })
+      .render({ containerWrapper: document.querySelector(sel), oldFile: oldF, newFile: newF });
+
+  show("#c1-code", f("fsync · save_index", `def save_index(by_id: dict) -> None:
+    entries = {
+        eid: {"name": fm.get("name", ""), "start": str(fm.get("start", "")),
+              "kcal": fm.get("kcal"), "path": rel(path)}
+        for eid, (path, fm, _) in by_id.items()      # <-- disk is the only input
+    }
+    INDEX.write_text(json.dumps({"entries": entries}, ...))
+`));
+
+  diff("#c1-diff",
+    f("fsync", `def save_index(by_id: dict) -> None:
+    entries = {
+        eid: {"name": fm.get("name", ""), "start": str(fm.get("start", "")),
+              "kcal": fm.get("kcal"), "path": rel(path)}
+        for eid, (path, fm, _) in by_id.items()
+    }
+    INDEX.write_text(json.dumps({"entries": entries}, indent=2, sort_keys=True),
+                     encoding="utf-8")
+`),
+    f("fsync", `def save_index(by_id: dict) -> None:
+    """Record every id we have a file for, and keep the ones we do not.
+
+    An id in the index with no file on disk is a tombstone: the user deleted
+    the entry and push has not removed it remotely yet. Rebuilding the index
+    from disk alone would drop it, and a dropped tombstone is silently the
+    same as never having had the entry at all.
+    """
+    entries = {
+        eid: {"name": fm.get("name", ""), "start": str(fm.get("start", "")),
+              "kcal": fm.get("kcal"), "path": rel(path)}
+        for eid, (path, fm, _) in by_id.items()
+    }
+    for eid, meta in load_index().items():
+        entries.setdefault(eid, meta)        # keep unresolved tombstones
+    write_json_atomic(INDEX, {"entries": entries})
+`));
+
+  show("#c2-code", f("fsync · cmd_pull", `        if eid in doomed:
+            # Deleted locally and not yet pushed. Re-creating it here would
+            # silently undo the deletion.
+            print(f"  {yellow('held')}  {doomed[eid].get('path', eid)}")
+            print(dim("         deleted locally; run 'fsync push' to delete it"))
+            print(dim("         remotely, or 'fsync pull --force' to restore it"))
+            skipped += 1
+            continue                          # <-- --force never consulted
+`));
+
+  diff("#c2-diff",
+    f("fsync", `        if eid in doomed:
+            print(f"  {yellow('held')}  {doomed[eid].get('path', eid)}")
+            skipped += 1
+            continue
+`),
+    f("fsync", `        if eid in doomed and not args.force:
+            print(f"  {yellow('held')}  {doomed[eid].get('path', eid)}")
+            skipped += 1
+            continue
+        # --force: fall through and rewrite the file, then drop the tombstone
+`));
+
+  show("#c3-code", f("fsync · cmd_push", `    work: list[...] = [("create", p, fm, b) for p, fm, b in new]
+    work += [("update", p, fm, b) for p, fm, b in by_id.values() if is_dirty(fm)]
+    #                                                             ^^^^^^^^^^^^^
+    # "dirty" only means the file changed since the last sync. Whether the
+    # remote also changed is never asked, so a conflicted entry is replaced
+    # like any other edit -- and replacement deletes the remote version.
+`));
+
+  diff("#m5-diff",
+    f("fsync · read_entry", `    fm = yaml.safe_load(parts[1])
+    if not isinstance(fm, dict):
+        raise ValueError("frontmatter is not a mapping")
+    return fm, parts[2].lstrip("\\n")
+`),
+    f("fsync · read_entry", `    fm = yaml.safe_load(parts[1])
+    if not isinstance(fm, dict):
+        raise ValueError("frontmatter is not a mapping")
+    # An unquoted timestamp is resolved by YAML into a datetime, whose str()
+    # uses a space where ISO uses T. That hashes differently from the string
+    # the remote round-trips as, so the entry would read as changed remotely
+    # on every sync, forever. Hand-written files are the normal case here.
+    for key in ("start", "end"):
+        if isinstance(fm.get(key), dt.datetime):
+            fm[key] = fm[key].isoformat()
+    return fm, parts[2].lstrip("\\n")
+`));
+</script>
+</body>
+</html>

@@ -1,8 +1,14 @@
 import type { ReactNode } from "react";
 import { MEALS, MEAL_NAME } from "../lib/format";
 
-export function Field({ label, hint, children }: {
-  label: string; hint?: string; children: ReactNode;
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
 }) {
   return (
     <label className="field">
@@ -13,7 +19,17 @@ export function Field({ label, hint, children }: {
   );
 }
 
-export function TextField({ label, value, onChange, type = "text", hint, placeholder, disabled, scaled, autoFocus }: {
+export function TextField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  hint,
+  placeholder,
+  disabled,
+  scaled,
+  autoFocus,
+}: {
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -40,7 +56,13 @@ export function TextField({ label, value, onChange, type = "text", hint, placeho
   );
 }
 
-export function Segmented<T extends string>({ label, options, value, onChange, titles }: {
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  titles,
+}: {
   label: string;
   options: readonly T[];
   value: T;
@@ -59,7 +81,7 @@ export function Segmented<T extends string>({ label, options, value, onChange, t
             aria-pressed={option === value}
             onClick={() => onChange(option)}
           >
-            {titles ? titles[option]!.slice(0, option === "ANYTIME" ? 3 : 1) : option}
+            {titles ? titles[option] : option}
           </button>
         ))}
       </div>
@@ -67,8 +89,12 @@ export function Segmented<T extends string>({ label, options, value, onChange, t
   );
 }
 
-export function MealPicker({ value, onChange }: {
-  value: string; onChange: (value: string) => void;
+export function MealPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
 }) {
   return (
     <Segmented
@@ -81,15 +107,24 @@ export function MealPicker({ value, onChange }: {
   );
 }
 
-export function UnitPicker({ value, onChange }: {
-  value: "kg" | "lb"; onChange: (value: "kg" | "lb") => void;
+export function UnitPicker({
+  value,
+  onChange,
+}: {
+  value: "kg" | "lb";
+  onChange: (value: "kg" | "lb") => void;
 }) {
   return (
     <div className="field">
       <span>Unit</span>
       <div className="seg">
         {(["kg", "lb"] as const).map((unit) => (
-          <button key={unit} type="button" aria-pressed={unit === value} onClick={() => onChange(unit)}>
+          <button
+            key={unit}
+            type="button"
+            aria-pressed={unit === value}
+            onClick={() => onChange(unit)}
+          >
             {unit}
           </button>
         ))}

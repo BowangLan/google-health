@@ -12,7 +12,6 @@ export interface Toast {
  */
 export function useActivity() {
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [busy, setBusy] = useState(false);
   const nextId = useRef(0);
@@ -35,9 +34,16 @@ export function useActivity() {
       at: new Date(),
     };
     setLog((entries) => [entry, ...entries].slice(0, 40));
-    if (entry.error || entry.code !== 0) setOpen(true);
     return entry;
   }, []);
 
-  return { log, open, setOpen, toast, notify, record, busy, setBusy, dismiss: () => setToast(null) };
+  return {
+    log,
+    toast,
+    notify,
+    record,
+    busy,
+    setBusy,
+    dismiss: () => setToast(null),
+  };
 }

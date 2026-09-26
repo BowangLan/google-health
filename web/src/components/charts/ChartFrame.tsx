@@ -7,8 +7,20 @@ import type { DayScale } from "../../lib/scale";
  * pixels-per-day match exactly and a column lines up with the point above it.
  */
 export function ChartFrame({
-  title, subtitle, scale, height, pad, yTicks, format, hoverDay, onHover,
-  pinnedDay, onPick, showAxis, children, note,
+  title,
+  subtitle,
+  scale,
+  height,
+  pad,
+  yTicks,
+  format,
+  hoverDay,
+  onHover,
+  pinnedDay,
+  onPick,
+  showAxis,
+  children,
+  note,
 }: {
   title: string;
   subtitle?: ReactNode;
@@ -22,7 +34,11 @@ export function ChartFrame({
   pinnedDay: string | null;
   onPick: (day: string) => void;
   showAxis: boolean;
-  children: (plot: { y: (value: number) => number; top: number; bottom: number }) => ReactNode;
+  children: (plot: {
+    y: (value: number) => number;
+    top: number;
+    bottom: number;
+  }) => ReactNode;
   note?: ReactNode;
 }) {
   const top = pad.top;
@@ -41,6 +57,11 @@ export function ChartFrame({
       <svg
         viewBox={`0 0 ${scale.width} ${height}`}
         className="viz-svg"
+        role="img"
+        aria-label={
+          title +
+          " over the selected range. Use Inspect a day to choose a date."
+        }
         preserveAspectRatio="none"
         onPointerMove={(event) => {
           const box = event.currentTarget.getBoundingClientRect();
@@ -57,9 +78,19 @@ export function ChartFrame({
         {/* Horizontal only: the crosshair is the vertical reference. */}
         {yTicks.map((value) => (
           <g key={value}>
-            <line className="viz-grid" x1={scale.left} x2={scale.width - scale.right}
-              y1={y(value)} y2={y(value)} />
-            <text className="viz-tick" x={scale.left - 8} y={y(value) + 3.5} textAnchor="end">
+            <line
+              className="viz-grid"
+              x1={scale.left}
+              x2={scale.width - scale.right}
+              y1={y(value)}
+              y2={y(value)}
+            />
+            <text
+              className="viz-tick"
+              x={scale.left - 8}
+              y={y(value) + 3.5}
+              textAnchor="end"
+            >
               {format(value)}
             </text>
           </g>
@@ -70,29 +101,57 @@ export function ChartFrame({
         {/* A pinned day survives the pointer leaving, which is what makes the
             action on it clickable at all. */}
         {pinnedDay && (
-          <line className="viz-crosshair pinned" x1={scale.x(pinnedDay)} x2={scale.x(pinnedDay)}
-            y1={top} y2={bottom} />
+          <line
+            className="viz-crosshair pinned"
+            x1={scale.x(pinnedDay)}
+            x2={scale.x(pinnedDay)}
+            y1={top}
+            y2={bottom}
+          />
         )}
         {hoverDay && hoverDay !== pinnedDay && (
-          <line className="viz-crosshair" x1={scale.x(hoverDay)} x2={scale.x(hoverDay)}
-            y1={top} y2={bottom} />
+          <line
+            className="viz-crosshair"
+            x1={scale.x(hoverDay)}
+            x2={scale.x(hoverDay)}
+            y1={top}
+            y2={bottom}
+          />
         )}
 
-        {showAxis && scale.ticks().map((day) => (
-          <text key={day} className="viz-tick" x={scale.x(day)} y={height - 6} textAnchor="middle">
-            {new Date(`${day}T12:00:00`).toLocaleDateString([], { day: "numeric", month: "short" })}
-          </text>
-        ))}
+        {showAxis &&
+          scale.ticks().map((day) => (
+            <text
+              key={day}
+              className="viz-tick"
+              x={scale.x(day)}
+              y={height - 6}
+              textAnchor="middle"
+            >
+              {new Date(`${day}T12:00:00`).toLocaleDateString([], {
+                day: "numeric",
+                month: "short",
+              })}
+            </text>
+          ))}
       </svg>
       {note && <div className="viz-note">{note}</div>}
     </figure>
   );
 }
 
-export function EmptyPanel({ title, message }: { title: string; message: string }) {
+export function EmptyPanel({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}) {
   return (
     <figure className="viz viz-empty">
-      <figcaption className="viz-head"><span className="viz-title">{title}</span></figcaption>
+      <figcaption className="viz-head">
+        <span className="viz-title">{title}</span>
+      </figcaption>
       <div className="viz-note">{message}</div>
     </figure>
   );

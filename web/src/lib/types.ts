@@ -119,7 +119,10 @@ export interface Collection {
   deleted: number;
   awaiting: number;
   pending: number;
-  details: Record<"edited" | "new" | "deleted" | "awaiting" | "pending" | "broken", string[]>;
+  details: Record<
+    "edited" | "new" | "deleted" | "awaiting" | "pending" | "broken",
+    string[]
+  >;
 }
 
 export interface Overview {
@@ -189,6 +192,16 @@ export interface Series {
   targets: Targets;
   rows: SeriesRow[];
   gaps: SeriesGap[];
-  coverage: { days_in_range: number; days_logged: number; days_weighed: number };
+  coverage: {
+    days_in_range: number;
+    days_logged: number;
+    days_weighed: number;
+  };
   broken: string[];
 }
+
+export type RunCommand = (
+  collection: Kind | "all",
+  command: string,
+  values: Record<string, string | boolean>,
+) => Promise<{ ok: boolean; text: string }>;

@@ -1,250 +1,314 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import * as api from "../src/lib/api";
-import { lastLine, shiftDay } from "./lib/format";
+import { useCallback, useEffect, useState } from "react";
+import * as api from "./lib/api";
+import { lastLine } from "./lib/format";
+import { journalHref, trendsHref } from "./lib/navigation";
 import { useActivity } from "./hooks/useActivity";
 import { useHealth } from "./hooks/useHealth";
-import { Calendar } from "./components/Calendar";
-import { DayRail } from "./components/DayRail";
-import { Composer } from "./components/Composer";
+import { useRoute } from "./hooks/useRoute";
+import { Journal } from "./components/Journal";
 import { PendingPill, PendingPopover } from "./components/Pending";
 import { SettingsPopover } from "./components/Settings";
 import { Trends } from "./components/Trends";
-import { ActivityStrip } from "./components/ActivityStrip";
+import { ActivityPanel } from "./components/ActivityStrip";
+import { Dialog } from "./components/Dialog";
 import { ShortcutSheet } from "./components/Shortcuts";
-import type { FoodRow, Kind } from "./lib/types";
+import type { RunCommand } from "./lib/types";
 import { IconContext } from "@phosphor-icons/react";
-import { IconAdd, IconNext, IconPrev, IconSettings } from "./lib/icons";
+import {
+  IconSettings,
+  IconTrends,
+  IconLedger,
+  IconPulse,
+  IconKeyboard,
+  IconActivity,
+} from "./lib/icons";
 
-type Panel = "pending" | "settings" | null;
+type Panel = "sync" | "settings" | "activity" | "shortcuts" | null;
 
 export default function App() {
   const health = useHealth();
   const activity = useActivity();
+  const { route, navigate } = useRoute();
+  const [revision, setRevision] = useState(0);
   const [panel, setPanel] = useState<Panel>(null);
-  const [composing, setComposing] = useState(false);
-  const [shortcuts, setShortcuts] = useState(false);
-  const [tombstones, setTombstones] = useState<Record<string, string[]>>({});
-  const railRef = useRef<HTMLDivElement>(null);
 
-  const { monthView, dayView, overview, targets, selected } = health;
+  const run: RunCommand = useCallback(
+    async (collection, command, values) => {
+      activity.setBusy(true);
+      try {
+        const result = await api.runCommand(collection, command, values);
+        activity.record(result);
+        const ok = result.code === 0;
+        const text = lastLine(result.stdout, result.stderr);
+        if (!ok)
+          activity.notify(
+            text || "Operation failed. See Activity for details.",
+            true,
+          );
+        return { ok, text };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        activity.record({
+          code: null,
+          stdout: "",
+          stderr: "",
+          command: collection + " " + command,
+          error: message,
+        });
+        activity.notify(message, true);
+        return { ok: false, text: message };
+      } finally {
+        activity.setBusy(false);
+      }
+    },
+    [activity],
+  );
 
-  /** Every CLI invocation: logged, toasted on failure, never silent. */
-  const run = useCallback(async (
-    collection: Kind | "all", command: string, values: Record<string, string | boolean>,
-  ) => {
-    activity.setBusy(true);
-    try {
-      const result = await api.runCommand(collection, command, values);
-      activity.record(result);
-      const ok = result.code === 0;
-      if (!ok) activity.notify(lastLine(result.stdout, result.stderr) || `exit ${result.code}`, true);
-      return { ok, text: lastLine(result.stdout, result.stderr) };
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      activity.record({ code: null, stdout: "", stderr: "", command: `${collection} ${command}`, error: message });
-      activity.notify(message, true);
-      return { ok: false, text: message };
-    } finally {
-      activity.setBusy(false);
-    }
-  }, [activity]);
-
-  const afterWrite = useCallback(async (message: string) => {
-    await health.refresh();
-    activity.notify(message);
-  }, [activity, health]);
-
-  const logAgain = useCallback(async (row: FoodRow) => {
-    // clone addresses its source by position within a keyword search, so the
-    // position is resolved immediately before using it.
-    try {
-      const found = await api.searchFoods(row.name);
-      const match = found.matches.find((candidate) => candidate.name === row.name);
-      if (!match) return activity.notify("that food is no longer in the local files", true);
-      const outcome = await run("food", "clone", {
-        keyword: row.name, index: String(match.index), amount: String(row.amount),
-      });
-      if (outcome.ok) await afterWrite(`Logged ${row.name}`);
-    } catch (cause) {
-      activity.notify(cause instanceof Error ? cause.message : String(cause), true);
-    }
-  }, [activity, afterWrite, run]);
-
-  const onRecordChanged = useCallback(async (message: string, staged?: boolean) => {
-    if (staged && selected) {
-      setTombstones((current) => ({
-        ...current,
-        [selected]: [...(current[selected] ?? []), message.split("“")[1]?.split("”")[0] ?? "record"],
-      }));
-    }
-    await afterWrite(message);
-  }, [afterWrite, selected]);
+  const afterWrite = useCallback(
+    async (message: string) => {
+      activity.notify(message);
+      setRevision((current) => current + 1);
+      try {
+        await health.refresh();
+      } catch {
+        activity.notify(
+          "Saved. Sync status couldn’t refresh; open Sync to check it.",
+          true,
+        );
+      }
+    },
+    [health, activity],
+  );
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
+    const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
-
-      if (event.key === "Escape") {
-        if (shortcuts) return setShortcuts(false);
-        if (composing) return setComposing(false);
-        return setPanel(null);
-      }
-      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (event.shiftKey) {
-        if (event.key === "?") { event.preventDefault(); setShortcuts(true); }
+      if (
+        document.querySelector("dialog[open]") ||
+        target.isContentEditable ||
+        /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      )
         return;
-      }
-      if (!selected || !monthView) return;
-
       const actions: Record<string, () => void> = {
-        ArrowLeft: () => health.select(shiftDay(selected, -1)),
-        ArrowRight: () => health.select(shiftDay(selected, 1)),
-        ArrowUp: () => health.select(shiftDay(selected, -7)),
-        ArrowDown: () => health.select(shiftDay(selected, 7)),
-        "[": () => health.stepMonth(-1),
-        "]": () => health.stepMonth(1),
-        t: () => health.select(monthView.today),
-        f: () => setComposing(true),
-        "/": () => setComposing(true),
-        w: () => railRef.current?.querySelector<HTMLButtonElement>(".ghost-row")?.click(),
-        p: () => setPanel((current) => (current === "pending" ? null : "pending")),
-        "?": () => setShortcuts(true),
+        j: () => navigate(journalHref()),
+        g: () => navigate(trendsHref()),
+        p: () => setPanel("sync"),
+        "?": () => setPanel("shortcuts"),
       };
       const action = actions[event.key];
-      if (action) { event.preventDefault(); action(); return; }
-
-      if (/^[1-5]$/.test(event.key) && dayView) {
-        const chip = [...dayView.food].reverse()[Number(event.key) - 1];
-        if (chip) { event.preventDefault(); void logAgain(chip); }
+      if (action) {
+        event.preventDefault();
+        action();
       }
-    }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [composing, dayView, health, logAgain, monthView, selected, shortcuts]);
+  }, [navigate]);
 
-  if (health.error) {
-    return (
-      <div className="errorcard" style={{ margin: 24 }}>
-        <div>Could not reach the server.</div>
-        <pre>{health.error}</pre>
-      </div>
-    );
-  }
-  if (!monthView || !selected) return <div className="note">Loading…</div>;
+  useEffect(() => {
+    setPanel(null);
+    window.scrollTo({ top: 0 });
+  }, [route.page]);
+
+  useEffect(() => {
+    const keyboard = () => {
+      document.documentElement.dataset.input = "keyboard";
+    };
+    const pointer = () => {
+      document.documentElement.dataset.input = "pointer";
+    };
+    window.addEventListener("keydown", keyboard, true);
+    window.addEventListener("pointerdown", pointer, true);
+    return () => {
+      window.removeEventListener("keydown", keyboard, true);
+      window.removeEventListener("pointerdown", pointer, true);
+    };
+  }, []);
 
   return (
-    <IconContext.Provider value={{ size: 16, weight: "regular" }}>
-      <header className="header">
-        <span className="wordmark">Health</span>
-
-        <div className="monthnav">
-          <button className="step" type="button" aria-label="Previous month" title="Previous month"
-            onClick={() => health.stepMonth(-1)}>
-            <IconPrev aria-hidden focusable="false" />
-          </button>
-          <h1>{monthView.label}</h1>
-          <button className="step" type="button" aria-label="Next month" title="Next month"
-            onClick={() => health.stepMonth(1)}>
-            <IconNext aria-hidden focusable="false" />
-          </button>
-        </div>
-
-        <div className="header-right">
-          <button className="secondary compact" type="button" onClick={() => setComposing(true)}>
-            <IconAdd aria-hidden focusable="false" />Log food
-          </button>
-          <PendingPill
-            overview={overview}
-            expanded={panel === "pending"}
-            onClick={() => setPanel(panel === "pending" ? null : "pending")}
-          />
-          <button className="step" type="button" aria-label="Settings" title="Settings"
-            onClick={() => setPanel(panel === "settings" ? null : "settings")}>
-            <IconSettings aria-hidden focusable="false" />
-          </button>
-        </div>
-      </header>
-
-      <main className="dash">
-        <section className="analysis">
-          <Trends unit={monthView.weight_unit} selected={selected} onSelect={health.select} />
-        </section>
-
-        <section className="side" ref={railRef}>
-          <Calendar
-            view={monthView}
-            selected={selected}
-            targets={targets}
-            onSelect={health.select}
-            compact
-          />
-          {dayView && (
-            <DayRail
-              view={dayView}
-              targets={targets}
-              tombstones={tombstones[selected] ?? []}
-              loading={health.loadingDay}
-              onAddFood={() => setComposing(true)}
-              onAgain={logAgain}
-              onChanged={onRecordChanged}
-              onPendingClick={() => setPanel("pending")}
-              run={run as never}
+    <IconContext.Provider value={{ size: 18, weight: "regular" }}>
+      <a
+        className="skip-link"
+        href="#main"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
+        Skip to content
+      </a>
+      <div className="app-shell">
+        <aside className="sidebar" aria-label="Health navigation">
+          <a className="brand" href={journalHref()}>
+            <span className="brand-symbol">
+              <IconPulse size={22} aria-hidden />
+            </span>
+            <span className="wordmark">Health</span>
+            <span className="local-label">Personal</span>
+          </a>
+          <nav className="main-nav" aria-label="Main">
+            <a
+              href={journalHref()}
+              aria-current={route.page === "journal" ? "page" : undefined}
+            >
+              <IconLedger aria-hidden />
+              Journal
+            </a>
+            <a
+              href={trendsHref()}
+              aria-current={route.page === "trends" ? "page" : undefined}
+            >
+              <IconTrends aria-hidden />
+              Trends
+            </a>
+          </nav>
+          <div className="sidebar-bottom">
+            <button
+              className="nav-utility"
+              onClick={() => setPanel("activity")}
+            >
+              <IconActivity aria-hidden />
+              Activity
+              {activity.busy && (
+                <span className="activity-running">Running</span>
+              )}
+            </button>
+            <button
+              className="nav-utility"
+              onClick={() => setPanel("settings")}
+            >
+              <IconSettings aria-hidden />
+              Settings
+            </button>
+            <button
+              className="nav-utility"
+              onClick={() => setPanel("shortcuts")}
+            >
+              <IconKeyboard aria-hidden />
+              Shortcuts<kbd aria-hidden>?</kbd>
+            </button>
+            <div className="connection">
+              <span>Google Health</span>
+              <PendingPill
+                overview={health.overview}
+                expanded={panel === "sync"}
+                onClick={() => setPanel("sync")}
+              />
+            </div>
+          </div>
+        </aside>
+        <main className="workspace" id="main" tabIndex={-1}>
+          {health.error ? (
+            <div className="startup-error">
+              <h1>Couldn’t connect</h1>
+              <p>Check that the local Health server is running.</p>
+              <pre>{health.error}</pre>
+              <button
+                className="primary"
+                onClick={() => {
+                  void health.refresh().catch(() => {});
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : !health.today ? (
+            <div
+              className="journal-loading"
+              role="status"
+              aria-label="Loading Health"
+            >
+              <i />
+              <i />
+            </div>
+          ) : route.page === "journal" ? (
+            <Journal
+              key={route.day ?? health.today}
+              day={route.day ?? health.today}
+              today={health.today}
+              unit={health.weightUnit}
+              targets={health.targets}
+              revision={revision}
+              navigate={navigate}
+              run={run}
+              onChanged={afterWrite}
+              onSync={() => setPanel("sync")}
             />
+          ) : (
+            <div className="trends-page">
+              <header className="page-header">
+                <div>
+                  <div className="eyebrow">Long-term view</div>
+                  <h1>Trends</h1>
+                  <p>Understand your weight and nutrition over time.</p>
+                </div>
+              </header>
+              <Trends
+                unit={health.weightUnit}
+                days={route.days}
+                inspectedDay={route.day}
+                navigate={navigate}
+                revision={revision}
+              />
+            </div>
           )}
-        </section>
-      </main>
-
-      {composing && dayView && (
-        <div className="composer-host">
-          <Composer
-            day={selected}
-            isToday={selected === monthView.today}
-            onClose={() => setComposing(false)}
-            onLogged={async (name) => { setComposing(false); await afterWrite(`Logged ${name}`); }}
-            run={run as never}
-          />
-        </div>
+        </main>
+      </div>
+      {panel === "sync" && (
+        <Dialog title="Google Health sync" onClose={() => setPanel(null)}>
+          {health.overview ? (
+            <PendingPopover
+              overview={health.overview}
+              onClose={() => setPanel(null)}
+              onRun={async (collection, command, values) => {
+                const result = await run(collection, command, values);
+                setRevision((value) => value + 1);
+                await health
+                  .refresh()
+                  .catch(() =>
+                    activity.notify("Couldn’t refresh sync status.", true),
+                  );
+                return result;
+              }}
+            />
+          ) : (
+            <p className="note">Sync status is not available yet.</p>
+          )}
+        </Dialog>
       )}
-
-      {panel === "pending" && overview && (
-        <PendingPopover
-          overview={overview}
-          onClose={() => setPanel(null)}
-          onRun={async (collection, command, values) => {
-            const outcome = await run(collection, command, values);
-            activity.setOpen(true);
-            await health.refresh();
-            if (outcome.ok && command === "push") setTombstones({});
-            return outcome;
-          }}
-        />
-      )}
-
       {panel === "settings" && (
-        <SettingsPopover
-          overview={overview}
-          targets={targets}
-          onSaved={(saved) => {
-            health.setTargets(saved);
-            setPanel(null);
-            void health.refresh();
-            activity.notify("Settings saved");
-          }}
-        />
+        <Dialog title="Settings" onClose={() => setPanel(null)}>
+          <SettingsPopover
+            overview={health.overview}
+            targets={health.targets}
+            onSaved={(saved) => {
+              health.setTargets(saved);
+              setPanel(null);
+              void afterWrite("Settings saved");
+            }}
+          />
+        </Dialog>
       )}
-
-      {shortcuts && <ShortcutSheet onClose={() => setShortcuts(false)} />}
-
+      {panel === "activity" && (
+        <Dialog title="Activity" onClose={() => setPanel(null)}>
+          <ActivityPanel log={activity.log} busy={activity.busy} />
+        </Dialog>
+      )}
+      {panel === "shortcuts" && (
+        <ShortcutSheet onClose={() => setPanel(null)} />
+      )}
       {activity.toast && (
-        <div className={`toast${activity.toast.bad ? " bad" : ""}`}>
+        <div
+          role={activity.toast.bad ? "alert" : "status"}
+          className={"toast" + (activity.toast.bad ? " bad" : "")}
+        >
           <span>{activity.toast.message}</span>
-          <button type="button" onClick={activity.dismiss}>Dismiss</button>
+          <button onClick={activity.dismiss}>Dismiss</button>
         </div>
       )}
-
-      <ActivityStrip log={activity.log} open={activity.open} setOpen={activity.setOpen} busy={activity.busy} />
     </IconContext.Provider>
   );
 }

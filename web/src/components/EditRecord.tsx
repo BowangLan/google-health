@@ -7,6 +7,9 @@ import { MealPicker, TextField, UnitPicker } from "./fields";
 const text = (value: number | null | undefined) =>
   value === null || value === undefined ? "" : String(value);
 
+/** Everything that is a total for the portion, so everything the amount scales. */
+const SCALES_WITH_AMOUNT = ["kcal", "protein", "carbs", "fat", "sugar", "fiber", "sodium_mg"];
+
 /**
  * Editing writes the local file and nothing else. The consequence line appears
  * only once a field actually changes, and it says what the next push will do,
@@ -38,15 +41,51 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
     };
   });
   const [initial] = useState<Record<string, string>>(() => ({ ...values }));
+  // Which figures the user typed themselves. Values that merely moved because
+  // the amount changed are a preview: the server rescales the record, so
+  // sending them back would scale twice.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   const set = (key: string) => (value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
+    setTouched((current) => new Set(current).add(key));
     setDirty(true);
     setProblem(null);
   };
+
+  /**
+   * Changing the amount rescales the nutrition, matching what `food clone`
+   * does: "I actually had two of these" should not mean retyping every macro.
+   * Values scale from the amount the record was opened with, so typing 2 then
+   * 3 gives three times the original rather than six.
+   */
+  const setAmount = (value: string) => {
+    setDirty(true);
+    setProblem(null);
+    setTouched((current) => new Set(current).add("amount"));
+    setValues((current) => {
+      const next: Record<string, string> = { ...current, amount: value };
+      const from = Number(initial.amount);
+      const to = Number(value);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0 || to <= 0) {
+        return next;
+      }
+      const factor = to / from;
+      for (const key of SCALES_WITH_AMOUNT) {
+        const base = initial[key];
+        if (base === undefined || base === "") continue;
+        const scaled = Number(base) * factor;
+        if (!Number.isFinite(scaled)) continue;
+        next[key] = String(Number(scaled.toFixed(3)));
+      }
+      return next;
+    });
+  };
+
+  const rescaled = Boolean(food) && values.amount !== initial.amount;
 
   const consequence = record.state !== "synced"
     ? "Saves to the local file. It stays unpushed until you push."
@@ -62,7 +101,10 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
     // drift and mark the record edited for nothing.
     const changed: Record<string, string> = {};
     for (const [key, value] of Object.entries(values)) {
-      if (value !== initial[key]) changed[key] = value;
+      if (value === initial[key]) continue;
+      // A scaled figure the user did not type is the server's to compute.
+      if (SCALES_WITH_AMOUNT.includes(key) && !touched.has(key)) continue;
+      changed[key] = value;
     }
     if ("value" in changed && !("unit" in changed)) changed.unit = values.unit ?? "kg";
     try {
@@ -87,20 +129,34 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
             hint={food.identified ? "Name comes from Google's catalog and cannot be changed here." : undefined}
           />
           <div className="row3">
-            <TextField label="Calories" type="number" value={values.kcal ?? ""} onChange={set("kcal")} />
-            <TextField label="Amount" type="number" value={values.amount ?? ""} onChange={set("amount")} />
+            <TextField label="Calories" type="number" value={values.kcal ?? ""}
+              onChange={set("kcal")} scaled={rescaled} />
+            <TextField label="Amount" type="number" value={values.amount ?? ""} onChange={setAmount} />
             <TextField label="Unit" value={values.unit ?? ""} onChange={set("unit")} />
           </div>
           <div className="row3">
-            <TextField label="Protein" type="number" value={values.protein ?? ""} onChange={set("protein")} />
-            <TextField label="Carbs" type="number" value={values.carbs ?? ""} onChange={set("carbs")} />
-            <TextField label="Fat" type="number" value={values.fat ?? ""} onChange={set("fat")} />
+            <TextField label="Protein" type="number" value={values.protein ?? ""}
+              onChange={set("protein")} scaled={rescaled} />
+            <TextField label="Carbs" type="number" value={values.carbs ?? ""}
+              onChange={set("carbs")} scaled={rescaled} />
+            <TextField label="Fat" type="number" value={values.fat ?? ""}
+              onChange={set("fat")} scaled={rescaled} />
           </div>
           <div className="row3">
-            <TextField label="Sugar" type="number" value={values.sugar ?? ""} onChange={set("sugar")} />
-            <TextField label="Fibre" type="number" value={values.fiber ?? ""} onChange={set("fiber")} />
-            <TextField label="Sodium mg" type="number" value={values.sodium_mg ?? ""} onChange={set("sodium_mg")} />
+            <TextField label="Sugar" type="number" value={values.sugar ?? ""}
+              onChange={set("sugar")} scaled={rescaled} />
+            <TextField label="Fibre" type="number" value={values.fiber ?? ""}
+              onChange={set("fiber")} scaled={rescaled} />
+            <TextField label="Sodium mg" type="number" value={values.sodium_mg ?? ""}
+              onChange={set("sodium_mg")} scaled={rescaled} />
           </div>
+          {rescaled && (
+            <div className="consequence calm">
+              Scaled from {initial.amount} to {values.amount} {values.unit || "serving"}.
+              Every nutrient scales, including any not shown here. Type over a
+              figure to override it.
+            </div>
+          )}
           <TextField label="Time" type="time" value={values.at ?? ""} onChange={set("at")} />
         </>
       ) : (

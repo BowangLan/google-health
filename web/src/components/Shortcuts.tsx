@@ -1,30 +1,45 @@
-const SHORTCUTS: [string, string][] = [
-  ["← →", "previous / next day"],
-  ["↑ ↓", "previous / next week"],
-  ["[ ]", "previous / next month"],
-  ["T", "today"],
-  ["F or /", "add food"],
-  ["W", "add weight"],
-  ["⇧W", "weight trends"],
-  ["1–5", "log the Nth recent food again"],
-  ["P", "pending work"],
-  ["Esc", "close"],
-  ["?", "this list"],
+import { Dialog } from "./Dialog";
+
+const GLOBAL = [
+  ["J", "Open today’s journal"],
+  ["G", "Open trends"],
+  ["P", "Review sync"],
+  ["?", "Keyboard shortcuts"],
+  ["Esc", "Close dialog"],
+];
+const JOURNAL = [
+  ["← / →", "Previous / next day"],
+  ["↑ / ↓", "Previous / next week"],
+  ["T", "Return to today"],
+  ["D", "Choose a date"],
+  ["F or /", "Log food to the displayed day"],
+  ["W", "Log weight to the displayed day"],
 ];
 
 export function ShortcutSheet({ onClose }: { onClose: () => void }) {
   return (
-    <div className="sheet" onClick={onClose}>
-      <div className="panel" onClick={(event) => event.stopPropagation()}>
-        <h2>Shortcuts</h2>
+    <Dialog title="Keyboard shortcuts" onClose={onClose}>
+      <div className="shortcut-content">
+        <h3>Anywhere</h3>
         <dl>
-          {SHORTCUTS.map(([key, meaning]) => (
+          {GLOBAL.map(([key, text]) => (
             <div key={key} style={{ display: "contents" }}>
-              <dt>{key}</dt><dd>{meaning}</dd>
+              <dt>{key}</dt>
+              <dd>{text}</dd>
+            </div>
+          ))}
+        </dl>
+        <h3>In Journal</h3>
+        <p>These act only on the day shown in Journal.</p>
+        <dl>
+          {JOURNAL.map(([key, text]) => (
+            <div key={key} style={{ display: "contents" }}>
+              <dt>{key}</dt>
+              <dd>{text}</dd>
             </div>
           ))}
         </dl>
       </div>
-    </div>
+    </Dialog>
   );
 }

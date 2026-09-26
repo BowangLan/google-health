@@ -32,7 +32,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from healthsync.common import Clock, tidy_numbers
+from healthsync.common import Clock, number, tidy_numbers
 from healthsync.config import resolve
 from healthsync.records.food import Food
 from healthsync.records.weight import POUND_KG, Weight
@@ -893,8 +893,39 @@ def optional(values, key):
     return True, (None if raw in (None, "") else raw)
 
 
+def scaled_food(fm, amount):
+    """Rescale a food to a new serving amount.
+
+    Everything that is a total for the portion scales, including nutrients the
+    web form never shows. Doing this here rather than in the browser is what
+    keeps a hidden nutrient like SATURATED_FAT from going stale while the
+    visible macros move, which is also what `food clone` guarantees.
+    """
+    serving = fm.get("serving") or {}
+    before = number(serving.get("amount", 1), "amount")
+    after = number(amount, "amount")
+    if before <= 0 or after <= 0:
+        raise Refused("serving amount must be greater than zero")
+    factor = after / before
+    if factor == 1:
+        return fm
+    for key in ("kcal", "carbs_g", "fat_g"):
+        if fm.get(key) is not None:
+            fm[key] = tidy_numbers(round(float(fm[key]) * factor, 6))
+    if fm.get("nutrients"):
+        fm["nutrients"] = {
+            key: tidy_numbers(round(float(value) * factor, 6))
+            for key, value in fm["nutrients"].items()
+        }
+    fm["serving"] = {"amount": tidy_numbers(after), "unit": serving.get("unit", "serving")}
+    return fm
+
+
 def edited_food(fm, values, clock):
     candidate = dict(fm)
+    # Scale first, then let any explicitly submitted figure override the result.
+    if values.get("amount") not in (None, ""):
+        candidate = scaled_food(candidate, values["amount"])
     for key, field in (("meal", "meal"), ("name", "name")):
         present, raw = optional(values, field)
         if present and raw is not None:
@@ -922,9 +953,6 @@ def edited_food(fm, values, clock):
         candidate.pop("nutrients", None)
 
     serving = dict(candidate.get("serving") or {})
-    present, raw = optional(values, "amount")
-    if present and raw is not None:
-        serving["amount"] = float(raw)
     present, raw = optional(values, "unit")
     if present and raw is not None:
         serving["unit"] = str(raw)

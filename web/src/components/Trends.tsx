@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import { IconWeight, IconTrends, IconFood, IconPulse } from "../lib/icons";
 import * as api from "../lib/api";
 import { centredMean, meanOfLogged, ratePerWeek } from "../lib/series";
 import { makeDayScale } from "../lib/scale";
+import { journalHref, trendsHref } from "../lib/navigation";
 import { num, parseDay } from "../lib/format";
 import type { Series } from "../lib/types";
 import { WeightChart } from "./charts/WeightChart";
 import { IntakeChart, NutrientChart } from "./charts/IntakeChart";
 
 const RANGES = [30, 90, 180, 365] as const;
-const WIDTH = 1000;
+const INITIAL_WIDTH = 720;
 const GUTTER = { left: 52, right: 44 };
 
 function signed(value: number, digits = 2): string {
@@ -16,43 +18,113 @@ function signed(value: number, digits = 2): string {
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(digits)}`;
 }
 
-/**
- * Always three lines, even when the hint is empty. This block swaps its
- * contents on hover, and a conditionally rendered line would change the row's
- * height and shove every chart below it as the pointer moves.
- */
-function Stat({ value, label, hint, tone = "weight" }: { value: string; label: string; hint?: string; tone?: string }) {
+/** Stable summary slots keep the chart position independent of the values. */
+function Stat({
+  value,
+  label,
+  hint,
+  tone = "weight",
+}: {
+  value: string;
+  label: string;
+  hint?: string;
+  tone?: string;
+}) {
   return (
     <div className={`stat ${tone}`}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
+      <div className="stat-label">
+        <span>{label}</span>
+        {tone === "weight" ? (
+          <IconWeight aria-hidden />
+        ) : tone === "calories" ? (
+          <IconFood aria-hidden />
+        ) : tone === "protein" ? (
+          <IconPulse aria-hidden />
+        ) : (
+          <IconTrends aria-hidden />
+        )}
+      </div>
+      <div className="stat-value">
+        {value === "No data" ? (
+          value
+        ) : (
+          <>
+            {value.split(" ")[0]}{" "}
+            <small>{value.split(" ").slice(1).join(" ")}</small>
+          </>
+        )}
+      </div>
       <div className="stat-hint">{hint ?? "\u00A0"}</div>
     </div>
   );
 }
 
-export function Trends({ unit, selected, onSelect }: {
+export function Trends({
+  unit,
+  days,
+  inspectedDay,
+  revision,
+  navigate,
+}: {
+  revision: number;
   unit: "kg" | "lb";
-  selected: string;
-  onSelect: (day: string) => void;
+  days: number;
+  inspectedDay: string | null;
+  navigate: (href: string, replace?: boolean) => void;
 }) {
-  const [days, setDays] = useState<number>(90);
+  const [attempt, setAttempt] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [chartNode, setChartNode] = useState<HTMLDivElement | null>(null);
+  const [chartWidth, setChartWidth] = useState(INITIAL_WIDTH);
+  useEffect(() => {
+    if (!chartNode) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && entry.contentRect.width > 0)
+        setChartWidth(entry.contentRect.width);
+    });
+    observer.observe(chartNode);
+    return () => observer.disconnect();
+  }, [chartNode]);
   const [series, setSeries] = useState<Series | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    api.getSeries(days, unit)
-      .then((data) => { if (live) { setSeries(data); setProblem(null); } })
-      .catch((cause) => { if (live) setProblem(cause instanceof Error ? cause.message : String(cause)); });
-    return () => { live = false; };
-  }, [days, unit]);
-
+    setLoading(true);
+    setProblem(null);
+    api
+      .getSeries(days, unit)
+      .then((data) => {
+        if (live) {
+          setSeries(data);
+          setProblem(null);
+        }
+      })
+      .catch((cause) => {
+        if (live)
+          setProblem(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [days, unit, revision, attempt]);
 
   const scale = useMemo(
-    () => series ? makeDayScale(series.since, series.until, WIDTH, GUTTER.left, GUTTER.right) : null,
-    [series],
+    () =>
+      series
+        ? makeDayScale(
+            series.since,
+            series.until,
+            chartWidth,
+            GUTTER.left,
+            GUTTER.right,
+          )
+        : null,
+    [series, chartWidth],
   );
 
   const stats = useMemo(() => {
@@ -65,108 +137,255 @@ export function Trends({ unit, selected, onSelect }: {
     return { trend, rate, latest, kcal, protein };
   }, [series]);
 
-  if (problem) {
-    return <div className="errorcard"><div>Could not load the series.</div><pre>{problem}</pre></div>;
-  }
-  if (!series || !scale || !stats) return <div className="note">Loading…</div>;
+  if (problem)
+    return (
+      <div className="errorcard" role="alert">
+        <h2>Couldn’t load trends.</h2>
+        <pre>{problem}</pre>
+        <button
+          className="secondary"
+          onClick={() => setAttempt((value) => value + 1)}
+        >
+          Retry trends
+        </button>
+      </div>
+    );
+  if (!series || !scale || !stats || series.days !== days)
+    return (
+      <div className="trends" role="status" aria-label="Loading trends">
+        <div className="skeleton-stats">
+          {[0, 1, 2, 3].map((i) => (
+            <i key={i} />
+          ))}
+        </div>
+        <div className="chart-skeleton" />
+      </div>
+    );
+  const selected =
+    inspectedDay && inspectedDay >= series.since && inspectedDay <= series.until
+      ? inspectedDay
+      : series.until;
+  const onSelect = (day: string) => navigate(trendsHref(days, day), true);
 
   const rate = stats.rate === null ? null : Number(stats.rate.toFixed(2));
-  const direction = rate === null || rate === 0 ? "steady" : rate > 0 ? "up" : "down";
+  const direction =
+    rate === null || rate === 0 ? "steady" : rate > 0 ? "up" : "down";
   const shownDay = hoverDay ?? selected;
-  const hovered = shownDay ? series.rows.find((row) => row.day === shownDay) : undefined;
-  const hoveredTrend = shownDay ? stats.trend.find((point) => point.day === shownDay) : undefined;
-
+  const hovered = shownDay
+    ? series.rows.find((row) => row.day === shownDay)
+    : undefined;
+  const hoveredTrend = shownDay
+    ? stats.trend.find((point) => point.day === shownDay)
+    : undefined;
 
   return (
-    <div className="trends">
+    <div className="trends" aria-busy={loading}>
       <div className="trends-bar">
-        <div className="seg">
+        <div className="range-heading">
+          <h2>Time range</h2>
+          <span className="viz-sub">Ending today</span>
+        </div>
+        <div className="seg" aria-label="Trend range">
           {RANGES.map((range) => (
-            <button key={range} type="button" aria-pressed={range === days}
-              onClick={() => setDays(range)}>
+            <button
+              key={range}
+              type="button"
+              aria-pressed={range === days}
+              onClick={() => {
+                setHoverDay(null);
+                navigate(trendsHref(range));
+              }}
+            >
               {range === 365 ? "1y" : `${range}d`}
             </button>
           ))}
         </div>
-        <span className="viz-sub">
-          {parseDay(series.since).toLocaleDateString([], { day: "numeric", month: "short" })}
-          {" – "}
-          {parseDay(series.until).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}
+        <span className="range-dates">
+          {parseDay(series.since).toLocaleDateString([], {
+            day: "numeric",
+            month: "short",
+          })}
+          {" - "}
+          {parseDay(series.until).toLocaleDateString([], {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
         </span>
       </div>
 
-      {/* Two readings, side by side and both always present: the range as a
-          whole on the left, and whichever day the pointer or the selection
-          names on the right. Fixed slots, so nothing reflows on hover. */}
+      {/* Range summaries stay independent of the selected day's readings. */}
       <div className="stats">
         <Stat
-          value={stats.latest ? `${num(stats.latest.value, 1)} ${series.unit}` : "—"}
-          label="weight trend"
+          value={
+            stats.latest
+              ? `${num(stats.latest.value, 1)} ${series.unit}`
+              : "No data"
+          }
+          label="Weight trend"
           hint={stats.latest?.provisional ? "provisional" : "seven-day average"}
         />
         <Stat
-          value={rate === null ? "—" : `${direction === "up" ? "↗ " : direction === "down" ? "↘ " : ""}${signed(rate)} ${series.unit}/wk`}
+          value={
+            rate === null ? "No data" : `${signed(rate)} ${series.unit}/wk`
+          }
           tone={direction}
-          label={`over ${days} days`}
-          hint={rate === null ? "needs more readings" : `${direction === "steady" ? "steady" : `trending ${direction}`} · fitted rate`}
+          label="Weekly change"
+          hint={
+            rate === null
+              ? "needs more readings"
+              : `${direction === "steady" ? "steady" : `trending ${direction}`} · fitted rate`
+          }
         />
         <Stat
-          value={stats.kcal.value === null ? "—" : `${num(stats.kcal.value)} kcal`}
-          label="average intake"
+          value={
+            stats.kcal.value === null
+              ? "No data"
+              : `${num(stats.kcal.value)} kcal`
+          }
+          label="Daily intake"
           tone="calories"
           hint={`over ${stats.kcal.days} of ${stats.kcal.of} days logged`}
         />
         <Stat
-          value={stats.protein.value === null ? "—" : `${num(stats.protein.value)} g`}
-          label="average protein"
+          value={
+            stats.protein.value === null
+              ? "No data"
+              : `${num(stats.protein.value)} g`
+          }
+          label="Daily protein"
           tone="protein"
           hint={`over ${stats.protein.days} days`}
         />
-
-        <div className="dayread">
-          <div className="dayread-head">
-            {hovered
-              ? parseDay(hovered.day).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })
-              : "—"}
-            {hoverDay && hoverDay !== selected && <span className="stat-hint"> click to select</span>}
-          </div>
-          <div className="dayread-row">
-            <span>{hovered?.weight == null ? "no reading" : `${num(hovered.weight, 1)} ${series.unit}`}</span>
-            <span>
-              {hoveredTrend ? `${num(hoveredTrend.value, 2)} avg` : "—"}
-            </span>
-            <span>
-              {hovered?.kcal == null ? "not logged" : `${num(hovered.kcal)} kcal`}
-            </span>
-          </div>
-          <div className="stat-hint">
-            {hovered?.first_entry
-              ? `${hovered.entries} entries · ${hovered.first_entry} – ${hovered.last_entry}`
-              : hovered?.weight_readings && hovered.weight_readings.length > 1
-                ? `${hovered.weight_readings.length} readings, first shown`
-                : "\u00A0"}
-          </div>
-        </div>
       </div>
-
-      {/* One axis, one crosshair. Reading co-movement off aligned panels is the
+      <div className="trends-analysis">
+        <section className="chart-panel" aria-label="Health trends">
+          <div className="chart-panel-heading">
+            <div>
+              <h2>Weight & nutrition</h2>
+              <p>{days} days of weight and nutrition</p>
+            </div>
+            <span className="chart-key">
+              <i />
+              7-day average
+            </span>
+          </div>
+          <div className="dayread">
+            <div className="dayread-head">
+              {hovered
+                ? parseDay(hovered.day).toLocaleDateString([], {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                  })
+                : "No data"}
+              {hoverDay && hoverDay !== selected && (
+                <span className="stat-hint"> click to select</span>
+              )}
+            </div>
+            <div className="dayread-row">
+              <span>
+                {hovered?.weight == null
+                  ? "no reading"
+                  : `${num(hovered.weight, 1)} ${series.unit}`}
+              </span>
+              <span>
+                {hoveredTrend
+                  ? `${num(hoveredTrend.value, 2)} avg`
+                  : "no average"}
+              </span>
+              <span>
+                {hovered?.kcal == null
+                  ? "not logged"
+                  : `${num(hovered.kcal)} kcal`}
+              </span>
+            </div>
+            <div className="stat-hint">
+              {hovered?.first_entry
+                ? `${hovered.entries} entries · ${hovered.first_entry} - ${hovered.last_entry}`
+                : hovered?.weight_readings && hovered.weight_readings.length > 1
+                  ? `${hovered.weight_readings.length} readings, first shown`
+                  : "\u00A0"}
+            </div>
+          </div>
+          <div className="inspection-controls">
+            <label>
+              Inspect a day
+              <input
+                type="date"
+                aria-label="Inspect a day in Trends"
+                min={series.since}
+                max={series.until}
+                value={selected}
+                onChange={(event) => {
+                  if (
+                    event.target.value >= series.since &&
+                    event.target.value <= series.until
+                  ) {
+                    setHoverDay(null);
+                    onSelect(event.target.value);
+                  }
+                }}
+              />
+            </label>
+            <a className="secondary" href={journalHref(selected)}>
+              Open{" "}
+              {parseDay(selected).toLocaleDateString([], {
+                month: "short",
+                day: "numeric",
+              })}{" "}
+              in Journal
+            </a>
+          </div>
+          <p className="chart-instruction">
+            Click a chart to inspect a day. Open its journal to see or edit the
+            entries.
+          </p>
+          {/* One axis, one crosshair. Reading co-movement off aligned panels is the
           honest form of "how does food relate to weight"; a dual axis would let
           the scales manufacture any correlation you like. */}
-      <div className="stack">
-        <WeightChart series={series} scale={scale} hoverDay={hoverDay} onHover={setHoverDay} pinnedDay={selected} onPick={onSelect} showAxis={false} />
-        <IntakeChart series={series} scale={scale} hoverDay={hoverDay} onHover={setHoverDay} pinnedDay={selected} onPick={onSelect} showAxis={false} />
-        <NutrientChart
-          series={series} scale={scale} hoverDay={hoverDay} onHover={setHoverDay}
-          pinnedDay={selected} onPick={onSelect} showAxis
-          label="Protein" field="protein" target={series.targets.daily_protein_g} unit="grams"
-        />
-      </div>
+          <div className="stack" ref={setChartNode}>
+            <WeightChart
+              series={series}
+              scale={scale}
+              hoverDay={hoverDay}
+              onHover={setHoverDay}
+              pinnedDay={selected}
+              onPick={onSelect}
+              showAxis={false}
+            />
+            <IntakeChart
+              series={series}
+              scale={scale}
+              hoverDay={hoverDay}
+              onHover={setHoverDay}
+              pinnedDay={selected}
+              onPick={onSelect}
+              showAxis={false}
+            />
+            <NutrientChart
+              series={series}
+              scale={scale}
+              hoverDay={hoverDay}
+              onHover={setHoverDay}
+              pinnedDay={selected}
+              onPick={onSelect}
+              showAxis
+              label="Protein"
+              field="protein"
+              target={series.targets.daily_protein_g}
+              unit="grams"
+            />
+          </div>
 
-      <p className="viz-caption">
-        Logged intake and measured weight over the same dates. Some days have no
-        food record, and weight moves with hydration, sleep and time of day.
-        Read these as two records side by side, not as cause and effect.
-      </p>
+          <p className="viz-caption">
+            Logged intake and measured weight over the same dates. Some days
+            have no food record, and weight moves with hydration, sleep and time
+            of day. Read these as two records side by side, not as cause and
+            effect.
+          </p>
+        </section>
+      </div>
     </div>
   );
 }

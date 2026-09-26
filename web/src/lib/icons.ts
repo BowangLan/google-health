@@ -28,3 +28,8 @@ export { ScalesIcon as IconWeight } from "@phosphor-icons/react/Scales";
 export { ForkKnifeIcon as IconFood } from "@phosphor-icons/react/ForkKnife";
 export { WarningIcon as IconWarning } from "@phosphor-icons/react/Warning";
 export { ArrowsClockwiseIcon as IconSync } from "@phosphor-icons/react/ArrowsClockwise";
+
+export { HeartbeatIcon as IconPulse } from "@phosphor-icons/react/Heartbeat";
+export { KeyboardIcon as IconKeyboard } from "@phosphor-icons/react/Keyboard";
+
+export { ClockCounterClockwiseIcon as IconActivity } from "@phosphor-icons/react/ClockCounterClockwise";

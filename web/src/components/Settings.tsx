@@ -2,12 +2,18 @@ import { useState } from "react";
 import * as api from "../lib/api";
 import type { Overview, Targets } from "../lib/types";
 
-export function SettingsPopover({ overview, targets, onSaved }: {
+export function SettingsPopover({
+  overview,
+  targets,
+  onSaved,
+}: {
   overview: Overview | null;
   targets: Targets;
   onSaved: (targets: Targets) => void;
 }) {
-  const [kcal, setKcal] = useState(targets.daily_kcal === null ? "" : String(targets.daily_kcal));
+  const [kcal, setKcal] = useState(
+    targets.daily_kcal === null ? "" : String(targets.daily_kcal),
+  );
   const [protein, setProtein] = useState(
     targets.daily_protein_g === null ? "" : String(targets.daily_protein_g),
   );
@@ -18,11 +24,13 @@ export function SettingsPopover({ overview, targets, onSaved }: {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     try {
-      onSaved(await api.putTargets({
-        daily_kcal: kcal.trim(),
-        daily_protein_g: protein.trim(),
-        weight_unit: unit || null,
-      }));
+      onSaved(
+        await api.putTargets({
+          daily_kcal: kcal.trim(),
+          daily_protein_g: protein.trim(),
+          weight_unit: unit || null,
+        }),
+      );
     } catch (cause) {
       setProblem(cause instanceof Error ? cause.message : String(cause));
     }
@@ -31,8 +39,8 @@ export function SettingsPopover({ overview, targets, onSaved }: {
   const rows: [string, string][] = first
     ? [
         ["Config", first.source ?? "defaults"],
-        ["Food", overview!.collections[0]?.directory ?? "—"],
-        ["Weight", overview!.collections[1]?.directory ?? "—"],
+        ["Food", overview!.collections[0]?.directory ?? "Not configured"],
+        ["Weight", overview!.collections[1]?.directory ?? "Not configured"],
         ["Timezone", first.timezone],
         ["CLI unit", first.weight_unit],
       ]
@@ -44,23 +52,42 @@ export function SettingsPopover({ overview, targets, onSaved }: {
       <form className="fields" onSubmit={submit}>
         <label className="field">
           <span>Daily calorie target</span>
-          <input type="number" step="any" value={kcal} onChange={(event) => setKcal(event.target.value)} />
+          <input
+            type="number"
+            step="any"
+            value={kcal}
+            onChange={(event) => setKcal(event.target.value)}
+          />
           <span className="hint">drives the bars; leave blank for none</span>
         </label>
         <label className="field">
           <span>Daily protein target (g)</span>
-          <input type="number" step="any" value={protein} onChange={(event) => setProtein(event.target.value)} />
+          <input
+            type="number"
+            step="any"
+            value={protein}
+            onChange={(event) => setProtein(event.target.value)}
+          />
         </label>
         <div className="field">
           <span>Show weight in</span>
           <div className="seg">
-            {([["", `follow the CLI (${first?.weight_unit ?? "kg"})`], ["kg", "kg"], ["lb", "lb"]] as const)
-              .map(([value, label]) => (
-                <button key={value} type="button" aria-pressed={unit === value}
-                  onClick={() => setUnit(value as "kg" | "lb" | "")}>
-                  {label}
-                </button>
-              ))}
+            {(
+              [
+                ["", `follow the CLI (${first?.weight_unit ?? "kg"})`],
+                ["kg", "kg"],
+                ["lb", "lb"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={unit === value}
+                onClick={() => setUnit(value as "kg" | "lb" | "")}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <span className="hint">
             Display only. Files keep kilograms and Google Health stores grams;
@@ -69,13 +96,18 @@ export function SettingsPopover({ overview, targets, onSaved }: {
         </div>
         {problem && <div className="consequence">{problem}</div>}
         <div className="buttons">
-          <button className="primary" type="submit">Save targets</button>
+          <button className="primary" type="submit">
+            Save targets
+          </button>
         </div>
       </form>
       <hr />
       <h3>Paths</h3>
       {rows.map(([term, value]) => (
-        <div className="line" key={term}><span>{term}</span><span>{value}</span></div>
+        <div className="line" key={term}>
+          <span>{term}</span>
+          <span>{value}</span>
+        </div>
       ))}
     </div>
   );
