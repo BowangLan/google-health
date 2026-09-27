@@ -258,6 +258,117 @@ class SyncTests(unittest.TestCase):
         self.assertIn('0 match Google Health, 0 differ, 1 missing remotely, 1 remote only',
                       self.output.getvalue())
 
+    def test_sync_groups_changes_and_reports_each_local_edit_once(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 80)
+        e.remote.put(self.weight(81), "9999")
+        e.add(self.weight(82), no_push=True)
+        self.output.truncate(0)
+        self.output.seek(0)
+        with patch("sys.stdin.isatty", return_value=False):
+            self.assertEqual(e.sync(), 0)
+        output = self.output.getvalue()
+        self.assertIn("From Google Health · pull (1)", output)
+        self.assertIn("To Google Health · push (2)", output)
+        self.assertIn("80 (local) vs 79.4 (Google Health)", output)
+        self.assertEqual(output.count(e.store.rel(path)), 1)
+        self.assertNotIn("Needs attention", output)
+        self.assertIn("No records changed", output)
+
+    def test_sync_clean_terminal_does_not_prompt(self):
+        e = self.engine
+        self.pull_one()
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input") as prompt:
+            self.assertEqual(e.sync(), 0)
+        prompt.assert_not_called()
+        self.assertIn("Nothing to sync", self.output.getvalue())
+
+    def test_sync_preview_never_mutates_even_with_action_flags(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        path.unlink()
+        e.add(self.weight(80), no_push=True)
+        e.remote.put(self.weight(81), "9999")
+        before = {p: p.read_bytes() for p in e.store.directory.rglob("*") if p.is_file()}
+        remote_before = copy.deepcopy(e.remote.points)
+        e.remote.calls.clear()
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input") as prompt:
+            self.assertEqual(e.sync(pull=True, push=True, yes=True, dry_run=True), 0)
+        prompt.assert_not_called()
+        self.assertEqual(before, {p: p.read_bytes() for p in e.store.directory.rglob("*") if p.is_file()})
+        self.assertEqual(e.remote.points, remote_before)
+        self.assertTrue(all(c[0] in ("fetch", "get") for c in e.remote.calls))
+        self.assertIn("Preview only. No records changed.", self.output.getvalue())
+        self.assertIn("delete", self.output.getvalue())
+
+    def test_sync_invalid_choice_retries_and_accepts_named_action(self):
+        e = self.engine
+        e.remote.put(self.weight())
+        with patch("sys.stdin.isatty", return_value=True), patch(
+            "builtins.input", side_effect=["typo", " PULL "]
+        ) as prompt:
+            self.assertEqual(e.sync(), 0)
+        self.assertEqual(prompt.call_count, 2)
+        self.assertIn("1234", e.store.scan()[0])
+        self.assertEqual(sum(c[0] == "fetch" for c in e.remote.calls), 1)
+
+    def test_sync_cancel_and_eof_leave_records_untouched(self):
+        e = self.engine
+        e.remote.put(self.weight())
+        for choice in ("", "n", "cancel", EOFError()):
+            with self.subTest(choice=choice), patch("sys.stdin.isatty", return_value=True), patch(
+                "builtins.input", side_effect=[choice]
+            ):
+                self.assertEqual(e.sync(), 0)
+            self.assertEqual(e.store.scan()[0], {})
+            self.assertTrue(all(c[0] == "fetch" for c in e.remote.calls))
+
+    def test_sync_both_pulls_before_push_and_retains_conflicts(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 80)
+        e.remote.put(self.weight(81))
+        e.remote.put(self.weight(82), "9999")
+        e.add(self.weight(83), no_push=True)
+        self.output.truncate(0)
+        self.output.seek(0)
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="3"):
+            self.assertEqual(e.sync(), 1)
+        output = self.output.getvalue()
+        self.assertIn("Needs attention (1)", output)
+        self.assertIn("conf", output)
+        self.assertIn("Sync needs attention", output)
+        self.assertLess(output.index("Pulling from"), output.index("Pushing to"))
+        self.assertEqual(read_entry(path)[0]["weight_kg"], 80)
+        self.assertEqual(e.remote_record("1234")["weight_kg"], 81)
+        self.assertIn("9999", e.store.scan()[0])
+        self.assertEqual(len(e.remote.points), 3)
+
+    def test_sync_matching_dirty_baseline_still_offers_refresh(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 80)
+        e.remote.put(self.weight(80))
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="push") as prompt:
+            self.assertEqual(e.sync(), 0)
+        prompt.assert_called_once()
+        self.assertIn("refresh", self.output.getvalue())
+        self.assertFalse(e.record.dirty(read_entry(path)[0]))
+        self.assertFalse(any(c[0] in ("create", "update") for c in e.remote.calls))
+
+    def test_sync_preview_reports_pending_recovery_without_retrying_create(self):
+        e = self.engine
+        e.remote.lose_id = True
+        self.assertEqual(e.add(self.weight()), 1)
+        journal = e.store.journal.read_bytes()
+        e.remote.calls.clear()
+        self.assertEqual(e.sync(dry_run=True), 0)
+        self.assertEqual(e.store.journal.read_bytes(), journal)
+        self.assertIn("pull to reconcile", self.output.getvalue())
+        self.assertIn("Recovery is pending", self.output.getvalue())
+        self.assertTrue(all(c[0] in ("fetch", "get") for c in e.remote.calls))
+
     def test_partial_replacement_retries_only_cleanup(self):
         e = self.make_engine(Food())
         path, _, _ = self.pull_one(e, self.food())
@@ -751,6 +862,18 @@ class CliTests(unittest.TestCase):
         self.redirect = redirect_stdout(self.output)
         self.redirect.__enter__()
         self.addCleanup(self.redirect.__exit__, None, None, None)
+
+    def test_sync_preview_flags_work_for_collection_aggregate_and_legacy(self):
+        for args, legacy, calls in (
+            (["food", "sync", "-n"], False, 1),
+            (["weight", "sync", "--dry-run", "--pull", "--push"], False, 1),
+            (["sync", "--all", "-n"], False, 2),
+            (["sync", "-n"], True, 1),
+        ):
+            with self.subTest(args=args), patch.object(Engine, "sync", return_value=0) as sync:
+                self.assertEqual(main(args + ["--config", str(self.config)], legacy=legacy), 0)
+                self.assertEqual(sync.call_count, calls)
+                self.assertTrue(all(call.args[-1] for call in sync.call_args_list))
 
     def test_legacy_add_and_new_food_command_share_files(self):
         args = [

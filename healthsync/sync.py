@@ -523,20 +523,32 @@ class Engine:
         )
         return int(failed > 0)
 
-    def sync(self, pull=False, push=False, yes=False, limit=500):
-        by_id, _, _ = self.scan()
+    def sync(self, pull=False, push=False, yes=False, limit=500, dry_run=False):
+        by_id, new, orphans = self.scan()
         if not self.recovery_files_ready():
             return 1
         since = self.store.earliest_day(self.clock.today())
+        print(
+            f"{S.bold(self.record.kind + ' sync')} · "
+            f"Checking Google Health ({since} through {self.clock.today()})…",
+            flush=True,
+        )
         points = self.remote.fetch(since.isoformat(), limit=limit)
-        remote = {
-            self.record.remote_to_fm(dp)["id"]: self.record.remote_to_fm(dp)
-            for dp in points
-        }
+        remote = {}
+        for dp in points:
+            fm = self.record.remote_to_fm(dp)
+            remote[fm["id"]] = fm
         doomed = self.store.pending_deletes(by_id)
-        print(S.dim(f"range {since} .. {self.clock.today()}"))
+        incoming, outgoing, attention = [], [], []
+        operations = self.store.operations()
+        pending_paths = {op["path"] for op in operations.values()}
+        pending_ids = {
+            eid for op in operations.values()
+            for eid in (op.get("old_id"), op.get("new_id")) if eid
+        }
         matched = different = missing = remote_only = 0
         for eid, (path, fm, _) in by_id.items():
+            label = self.store.rel(path)
             other = remote.get(eid)
             if other is None:
                 point = self.remote.get(eid)
@@ -547,55 +559,121 @@ class Engine:
                     points.append(point)
             if other is None:
                 missing += 1
-                print(
-                    f"  {S.bad('x')}{self.store.rel(path)}: "
-                    f"{S.dim('gone remotely (kept locally)')}"
-                )
+                attention.append(("missing", label + ": gone remotely; kept locally", []))
             elif self.record.digest(fm) != self.record.digest(other):
                 different += 1
-                mark, colour = (
-                    ("!", S.red)
-                    if self.record.dirty(fm) and self.conflicts(fm, other)
-                    else ("*", S.yellow)
-                    if self.record.dirty(fm)
-                    else (">", S.green)
-                )
-                print(f"  {S.tag(colour, mark)}{self.store.rel(path)}")
-                for key, mine, theirs in self.record.diff(fm, other):
-                    print(S.dim(f"         {key}: {mine} (here) vs {theirs} (remote)"))
+                if self.record.dirty(fm):
+                    rows, tag = (
+                        (attention, "conf") if self.conflicts(fm, other)
+                        else (outgoing, "edit")
+                    )
+                else:
+                    rows, tag = incoming, "edit"
+                if label not in pending_paths and eid not in pending_ids:
+                    rows.append((tag, label, self.record.diff(fm, other)))
             else:
                 matched += 1
+                if (self.record.dirty(fm) and label not in pending_paths
+                        and eid not in pending_ids):
+                    outgoing.append(("refresh", label + ": save matching baseline", []))
         for eid, fm in remote.items():
             if eid not in by_id and eid not in doomed:
                 remote_only += 1
-                print(
-                    f"  {S.ok('>')}{self.record.time(fm)} "
-                    f"{self.record.summary(fm)}: {S.dim('remote only')}"
-                )
+                if eid not in pending_ids:
+                    incoming.append((
+                        "new", f"{self.record.time(fm)} · {self.record.summary(fm)}", []
+                    ))
+        for path, fm, _ in new:
+            if self.store.rel(path) not in pending_paths:
+                outgoing.append((
+                    "new", f"{self.store.rel(path)} · {self.record.summary(fm)}", []
+                ))
+        for eid, meta in doomed.items():
+            if eid not in pending_ids:
+                outgoing.append(("delete", meta.get("path", eid), []))
+        for path, _, _ in orphans:
+            if self.store.rel(path) not in pending_paths:
+                attention.append((
+                    "recover", self.store.rel(path) + ": run pull before retrying", []
+                ))
+        for op in operations.values():
+            action = "push to finish cleanup" if op["state"] == "cleanup" else "pull to reconcile"
+            attention.append(("recover", f"{op['path']}: {action}", []))
+
+        for title, colour, rows in (
+            ("From Google Health · pull", S.green, incoming),
+            ("To Google Health · push", S.yellow, outgoing),
+            ("Needs attention", S.red, attention),
+        ):
+            if not rows:
+                continue
+            print(f"\n{S.bold(title)} ({len(rows)})")
+            for tag, label, differences in rows:
+                print(f"  {S.tag(colour, tag, 9)}{label}")
+                for key, mine, theirs in differences:
+                    print(S.dim(f"           {key}: {mine} (local) vs {theirs} (Google Health)"))
         print(
-            f"{S.bold('comparison')} {matched} match Google Health, {different} differ, "
+            f"\n{S.bold('comparison')} {matched} match Google Health, {different} differ, "
             f"{missing} missing remotely, {remote_only} remote only"
         )
-        self.status()
+        if any(tag == "conf" for tag, _, _ in attention):
+            print(S.yellow("Conflicts: changed locally and in Google Health; review the fields above. "
+                           "Sync keeps conflicting edits for you to resolve."))
+        if doomed:
+            print(S.yellow("Push checks deletions for conflicts and asks before deleting remotely "
+                           "unless --yes is supplied."))
+        if operations or orphans:
+            print(S.yellow("Recovery is pending. Keep the local files and recovery journal."))
+        has_work = bool(incoming or outgoing or attention)
+        if not has_work:
+            print(S.green("Everything matches in the checked range. Nothing to sync."))
+        if dry_run:
+            print(S.dim("Preview only. No records changed."))
+            return 0
         if not (pull or push):
+            if not has_work:
+                return 0
             if not sys.stdin.isatty():
-                print(S.dim("pass --pull and/or --push to act"))
+                print(S.dim("No records changed. Run sync with --pull, --push, or both to apply changes."))
                 return 0
-            try:
-                choice = input(
-                    f"  {S.yellow('?')} "
-                    f"{S.bold('1')} pull / {S.bold('2')} push / "
-                    f"{S.bold('3')} both / {S.bold('n')} nothing: "
-                ).strip()
-            except (EOFError, KeyboardInterrupt):
+            pull, push = self._sync_choice()
+            if not (pull or push):
+                print(S.dim("No records changed."))
                 return 0
-            pull, push = choice in ("1", "3"), choice in ("2", "3")
         rc = 0
         if pull:
+            print(f"\n{S.bold('Pulling from Google Health…')}", flush=True)
             rc = self.pull((self.clock.today() - since).days + 1, limit, points=points)
         if push:
+            print(f"\n{S.bold('Pushing to Google Health…')}", flush=True)
             rc = max(rc, self.push(yes=yes, limit=limit))
+        if rc:
+            print(S.yellow("Sync needs attention. Review held or failed records above before retrying."))
+        else:
+            print(S.green("Selected sync actions completed."))
         return rc
+
+    def _sync_choice(self):
+        print(
+            "\n  1  Pull   Google Health → local files (keeps local edits and deletions)\n"
+            "  2  Push   Local files → Google Health (checks conflicts)\n"
+            "  3  Both   Pull, then push\n"
+            "  n  Cancel (default)"
+        )
+        choices = {
+            "1": (True, False), "pull": (True, False),
+            "2": (False, True), "push": (False, True),
+            "3": (True, True), "both": (True, True),
+            "": (False, False), "n": (False, False), "cancel": (False, False),
+        }
+        while True:
+            try:
+                choice = input(f"  {S.yellow('?')} Choose [1/2/3/n]: ").strip().lower()
+            except EOFError:
+                return False, False
+            if choice in choices:
+                return choices[choice]
+            print(S.yellow("Choose 1 (pull), 2 (push), 3 (both), or Enter to cancel."))
 
     def tidy(self):
         by_id, new, orphans = self.scan()

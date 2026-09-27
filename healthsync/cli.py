@@ -82,8 +82,16 @@ def shared_commands(sub, common, aggregate=False):
                 "-y", "--yes", action="store_true", help="confirm remote deletions"
             )
         if name == "sync":
-            sp.add_argument("--pull", action="store_true")
-            sp.add_argument("--push", action="store_true")
+            sp.add_argument(
+                "--pull", action="store_true", help="apply remote changes locally"
+            )
+            sp.add_argument(
+                "--push", action="store_true", help="send local changes to Google Health"
+            )
+            sp.add_argument(
+                "-n", "--dry-run", action="store_true",
+                help="compare only; never prompt or change records, even with --pull/--push",
+            )
     return parsers
 
 
@@ -188,7 +196,7 @@ def run(engine, cfg, args):
     if cmd == "push":
         return engine.push(args.dry_run, args.yes, args.force, args.limit)
     if cmd == "sync":
-        return engine.sync(args.pull, args.push, args.yes, args.limit)
+        return engine.sync(args.pull, args.push, args.yes, args.limit, args.dry_run)
     if cmd == "status":
         return engine.status()
     if cmd == "tidy":

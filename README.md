@@ -178,6 +178,7 @@ Substitute `weight` for weight records. Both collections support:
 | `push --dry-run` | Preview changes and check existing records remotely; no record writes |
 | `push` | Send this collection's changes; confirm file deletions before deleting remotely |
 | `sync` | Compare both sides, then choose pull, push, both, or nothing |
+| `sync --dry-run` | Compare without prompting or changing records, even with `--pull`/`--push` |
 | `tidy` | Derive file locations from their timestamps; local only |
 | `config` | Show resolved paths, timezone, and units |
 
@@ -186,6 +187,14 @@ Top-level shared commands require `--all`, for example `hsync sync --all` or
 separately. This is not a transaction across food and weight. Without a terminal,
 `sync` only displays the comparison unless `--pull` and/or `--push` is supplied.
 Pull runs before push when both are selected.
+
+`sync` groups changes by direction: **From Google Health**, **To Google Health**,
+and **Needs attention**. It shows field differences for edits and calls out
+conflicts, missing remote records, and pending recovery. The comparison describes
+the state before any actions. A clean comparison exits without a prompt.
+At the prompt, use `1`/`pull`, `2`/`push`, or `3`/`both`; Enter cancels.
+Invalid choices ask again. `--yes` confirms remote deletions only; it does not
+choose a sync action. For a preview in a terminal, use `sync --dry-run` (or `-n`).
 
 `--limit` is a list page size, not a total-record cap. Pagination failure aborts
 the read rather than treating an incomplete result as remote deletions.
