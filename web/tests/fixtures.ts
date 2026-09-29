@@ -1,5 +1,13 @@
 import type { Page } from "@playwright/test";
-import type { FoodRow, MonthView, Series, Targets } from "../src/lib/types";
+import type {
+  FoodRow,
+  Kind,
+  MonthView,
+  Overview,
+  Series,
+  SyncCollection,
+  Targets,
+} from "../src/lib/types";
 
 export const TODAY = "2026-09-25";
 export const PAST = "2026-09-24";
@@ -99,6 +107,62 @@ function series(days: number, targets: Targets): Series {
   };
 }
 
+/** Both collections with nothing local to send. Tests mutate a copy. */
+export function cleanOverview(): Overview {
+  return {
+    collections: (["food", "weight"] as Kind[]).map((kind) => ({
+      kind,
+      directory: kind,
+      index: "index",
+      timezone: "America/Los_Angeles",
+      weight_unit: "lb",
+      source: null,
+      ghealth: "ghealth",
+      synced: 10,
+      edited: 0,
+      new: 0,
+      deleted: 0,
+      awaiting: 0,
+      pending: 0,
+      details: {
+        edited: [],
+        new: [],
+        deleted: [],
+        awaiting: [],
+        pending: [],
+        broken: [],
+      },
+    })),
+  };
+}
+
+/** One collection's part of a sync report: checked, matching, pulled nothing. */
+export function syncCollection(
+  kind: Kind,
+  extra: Partial<SyncCollection> = {},
+): SyncCollection {
+  return {
+    kind,
+    checked: true,
+    since: shift(TODAY, -30),
+    until: TODAY,
+    incoming: [],
+    outgoing: [],
+    attention: [],
+    comparison: { matched: 10, different: 0, missing: 0, remote_only: 0 },
+    ran: ["pull"],
+    pull: { fetched: 0, saved: 0, held: 0 },
+    push: null,
+    dry_run: false,
+    events: [],
+    deletions: [],
+    deletions_held: false,
+    notes: [],
+    error: null,
+    ...extra,
+  };
+}
+
 /** Every /api request is fulfilled here. Tests cannot write local or remote health data. */
 export async function mockHealth(page: Page) {
   const state = {
@@ -113,12 +177,51 @@ export async function mockHealth(page: Page) {
       daily_protein_g: 150,
       weight_unit: "lb",
     } as Targets,
+    overview: cleanOverview(),
+    /** Every POST /api/sync body, in order. Syncs are not record writes. */
+    syncCalls: [] as Record<string, unknown>[],
+    failSync: false,
+    /** The next sync responses report these collections; null means clean. */
+    syncCollections: null as SyncCollection[] | null,
   };
   await page.route("**/api/**", async (route) => {
     const req = route.request(),
       url = new URL(req.url());
     if (req.method() !== "GET") {
       const body = req.postDataJSON();
+      if (url.pathname === "/api/sync") {
+        state.syncCalls.push(body);
+        const command = "./hsync sync --all --pull --limit 500";
+        if (state.failSync)
+          return route.fulfill({
+            json: {
+              code: 1,
+              stdout: "",
+              stderr: "hsync: could not read credentials; run ghealth auth login\n",
+              command,
+              error: "could not read credentials; run ghealth auth login",
+              collections: [
+                syncCollection("food", { checked: false }),
+                syncCollection("weight", { checked: false }),
+              ],
+              overview: state.overview,
+            },
+          });
+        return route.fulfill({
+          json: {
+            code: 0,
+            stdout: "food:\nfood sync · Checking Google Health…\n",
+            stderr: "",
+            command,
+            error: null,
+            collections: state.syncCollections ?? [
+              syncCollection("food"),
+              syncCollection("weight"),
+            ],
+            overview: state.overview,
+          },
+        });
+      }
       state.writes.push({ method: req.method(), path: url.pathname, body });
       if (state.failWrite)
         return route.fulfill({
@@ -158,32 +261,7 @@ export async function mockHealth(page: Page) {
     if (url.pathname === "/api/targets")
       return route.fulfill({ json: state.targets });
     if (url.pathname === "/api/overview")
-      return route.fulfill({
-        json: {
-          collections: ["food", "weight"].map((kind) => ({
-            kind,
-            source: null,
-            directory: kind,
-            index: "index",
-            timezone: "America/Los_Angeles",
-            weight_unit: "lb",
-            synced: 10,
-            edited: 0,
-            new: 0,
-            deleted: 0,
-            awaiting: 0,
-            pending: 0,
-            details: {
-              edited: [],
-              new: [],
-              deleted: [],
-              awaiting: [],
-              pending: [],
-              broken: [],
-            },
-          })),
-        },
-      });
+      return route.fulfill({ json: state.overview });
     if (url.pathname === "/api/foods") {
       const matches = "Rice bowl"
         .toLowerCase()

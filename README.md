@@ -152,9 +152,11 @@ pnpm --dir web build
 ./hweb
 ```
 
-Open the printed URL (default: `http://127.0.0.1:8787`). New entries can sync
-immediately; edits and deletions are local changes reviewed through the sync
-dialog. See the [web app guide](web/README.md) for workflows and UI development.
+Open the printed URL (default: `http://127.0.0.1:8787`). New entries sync
+immediately. The app pulls from Google Health when it opens and whenever the
+window regains focus, so records logged elsewhere appear on their own; edits
+and deletions wait in the Google Health panel until you push them. See the
+[web app guide](web/README.md) for workflows and UI development.
 
 ## Commands
 
@@ -409,6 +411,7 @@ The sync engine is Python; the web app uses React, TypeScript, and Vite.
 | [`healthsync/records/`](healthsync/records/) | Food and weight schemas |
 | [`healthsync/food_commands.py`](healthsync/food_commands.py) | Food logging, cloning, and totals |
 | [`healthsync/web.py`](healthsync/web.py) | Local web server and API |
+| [`healthsync/sync_report.py`](healthsync/sync_report.py) | Turns `sync` output into the web app's structured report |
 | [`web/`](web/) | React interface and browser tests |
 
 ### Tests

@@ -23,6 +23,9 @@ client_secret*.json
 /hsync.toml
 /.hsync-web.json
 
+# Lavish review artifacts: generated reports for local review only.
+/.lavish/
+
 # Google's CLI: a clone plus a compiled Go binary, restored by setup-wizard.sh.
 /google-health-cli/
 

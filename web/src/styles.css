@@ -208,38 +208,61 @@ kbd {
 .activity-running {
   font-size: 9px;
 }
-.connection {
+.sync-status {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
+  gap: 10px;
+  width: 100%;
   margin-top: 14px;
-  padding: 18px 8px 0;
+  padding: 16px 8px 6px;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  font-size: 11px;
+}
+.sync-status:hover {
+  color: var(--text);
+}
+.sync-status > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.sync-status-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sync-status-text strong {
+  font-weight: 550;
+  color: var(--text);
+}
+.sync-status-line {
   color: var(--text-3);
   font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 3px 6px;
+.sync-status.work .sync-status-line {
   color: var(--text-2);
-  background: var(--bg-2);
-  font-size: 10px;
 }
-.pill.warn {
+.sync-status.warn .sync-status-line,
+.sync-status.warn > svg {
   color: var(--warn);
-  border-color: #65502d;
 }
-.pill .dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
+.sync-status.busy > svg {
+  color: var(--text);
+}
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: sync-spin 1.1s linear infinite;
 }
 .workspace {
   padding: 40px 40px 64px;
@@ -1420,6 +1443,173 @@ summary {
   border: 0;
   border-top: 1px solid var(--line);
 }
+.sync-panel {
+  display: grid;
+}
+.sync-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.sync-head strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  letter-spacing: -0.2px;
+}
+.sync-head strong span {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.sync-head.warn strong {
+  color: var(--warn);
+}
+.sync-head p {
+  margin-top: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  max-width: 46ch;
+  overflow-wrap: anywhere;
+}
+.sync-head .secondary {
+  flex-shrink: 0;
+}
+.sync-section {
+  display: grid;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.sync-section h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.sync-section h3 span {
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 10px;
+}
+.sync-group h4 {
+  margin-bottom: 7px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 500;
+}
+.sync-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.sync-rows li {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 11px;
+}
+.sync-tag {
+  justify-self: start;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text-3);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.sync-tag.warn {
+  color: var(--warn);
+  border-color: #65502d;
+}
+.sync-tag.bad {
+  color: var(--bad);
+  border-color: #724343;
+}
+.sync-row-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.sync-row-text {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sync-row-text time {
+  margin-right: 7px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sync-diff {
+  font: 10px/1.5 var(--mono);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.sync-advice,
+.sync-hint {
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.sync-empty {
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 52ch;
+}
+.sync-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.sync-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.sync-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 2px;
+}
+.sync-section .text-action {
+  justify-self: start;
+}
+.sync-output {
+  padding: 12px 22px 18px;
+  font-size: 11px;
+}
+.sync-output summary {
+  cursor: pointer;
+  color: var(--text-3);
+}
+.sync-output code {
+  display: block;
+  margin: 10px 0 6px;
+  font: 10px/1.5 var(--mono);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.sync-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 10px/1.6 var(--mono);
+  color: var(--text-2);
+}
+.sync-output pre.err {
+  color: var(--bad);
+}
 .shortcut-content {
   padding: 22px;
 }
@@ -1688,16 +1878,16 @@ summary {
   }
   .nav-utility kbd,
   .activity-running,
-  .connection > span {
+  .sync-status-text {
     display: none;
   }
-  .connection {
+  .sync-status {
     margin: 0 0 0 4px;
     border: 0;
-    padding: 0;
-  }
-  .pill {
-    font-size: 9px;
+    padding: 7px;
+    width: 30px;
+    height: 30px;
+    justify-content: center;
   }
   .main-nav {
     display: flex;

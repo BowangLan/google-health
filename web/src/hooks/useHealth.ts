@@ -40,5 +40,14 @@ export function useHealth() {
     return () => window.clearInterval(timer);
   }, []);
 
-  return { today, weightUnit, overview, targets, setTargets, error, refresh };
+  return {
+    today,
+    weightUnit,
+    overview,
+    setOverview,
+    targets,
+    setTargets,
+    error,
+    refresh,
+  };
 }

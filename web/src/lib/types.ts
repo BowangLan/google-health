@@ -205,3 +205,66 @@ export type RunCommand = (
   command: string,
   values: Record<string, string | boolean>,
 ) => Promise<{ ok: boolean; text: string }>;
+
+/** Which of `hsync sync`'s actions to run after its comparison. */
+export interface SyncOptions {
+  pull?: boolean;
+  push?: boolean;
+  /** Confirms remote deletions, which the CLI otherwise holds without a terminal. */
+  yes?: boolean;
+}
+
+export interface SyncDiff {
+  field: string;
+  local: string;
+  remote: string;
+}
+
+/** One printed record line from the CLI, split into the parts a page lays out. */
+export interface SyncRow {
+  tag: string;
+  text: string;
+  phase: "compare" | "pull" | "push";
+  detail: string;
+  time?: string;
+  path?: string;
+  diff: SyncDiff[];
+}
+
+export interface SyncCollection {
+  kind: Kind | null;
+  /** False when the run ended before this collection was compared. */
+  checked: boolean;
+  since: string | null;
+  until: string | null;
+  incoming: SyncRow[];
+  outgoing: SyncRow[];
+  attention: SyncRow[];
+  comparison: {
+    matched: number;
+    different: number;
+    missing: number;
+    remote_only: number;
+  } | null;
+  ran: ("pull" | "push")[];
+  pull: { fetched: number; saved: number; held: number } | null;
+  push: {
+    saved: number;
+    deleted: number;
+    absent: number;
+    recovered: number;
+    failed: number;
+  } | null;
+  dry_run: boolean;
+  events: SyncRow[];
+  deletions: SyncRow[];
+  deletions_held: boolean;
+  notes: string[];
+  error: string | null;
+}
+
+export interface SyncResult extends RunResult {
+  collections: SyncCollection[];
+  /** The local state right after the run, so no second request is needed. */
+  overview: Overview;
+}

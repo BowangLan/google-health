@@ -32,6 +32,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from healthsync import sync_report
 from healthsync.common import Clock, number, tidy_numbers
 from healthsync.config import resolve
 from healthsync.records.food import Food
@@ -293,31 +294,53 @@ def run(arguments):
     """Run the CLI without a terminal, so its prompts take the written path."""
     environment = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
     command = [str(ROOT / "hsync"), *arguments]
-    # The CLI takes each collection's lock non-blockingly for the whole run, so
-    # an in-process edit during it would fail with a confusing lock error.
-    marks = {a for a in arguments if a in ("food", "weight")} or {"all"}
-    with RUNNING_LOCK:
-        RUNNING.update(marks)
-    try:
-        done = subprocess.run(
-            command,
-            cwd=ROOT,
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        return {"code": None, "stdout": "", "stderr": f"no response after {TIMEOUT}s"}
-    finally:
-        with RUNNING_LOCK:
-            RUNNING.difference_update(marks)
+    # The CLI takes each collection's lock non-blockingly for the whole run.
+    # Serialising runs here means a sync in progress delays a new entry by a
+    # few seconds instead of failing it with a lock error.
+    with CLI_LOCK:
+        try:
+            done = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return {"code": None, "stdout": "", "stderr": f"no response after {TIMEOUT}s"}
     return {"code": done.returncode, "stdout": done.stdout, "stderr": done.stderr}
 
 
 def preview(arguments):
     return "./hsync " + " ".join(shlex.quote(part) for part in arguments)
+
+
+# Syncing ------------------------------------------------------------------
+#
+# The web app syncs through the real `sync` command. The CLI does the
+# comparing, pulling, pushing, and conflict checking; the response carries its
+# output both raw and structured, plus a fresh local overview so the page can
+# update without a second round trip.
+
+
+def sync_run(payload):
+    """Run `hsync sync` for one or both collections and structure its report."""
+    kind = payload.get("collection") or "all"
+    values = {"limit": "500"}
+    for key in ("pull", "push", "yes"):
+        if payload.get(key):
+            values[key] = True
+    arguments = argv({"collection": kind, "command": "sync", "values": values})
+    result = run(arguments)
+    result["command"] = preview(arguments)
+    kinds = ("food", "weight") if kind == "all" else (kind,)
+    result.update(
+        sync_report.parse(result["stdout"], result["stderr"], result["code"], kinds)
+    )
+    result["overview"] = overview()
+    return result
 
 
 # Reading ------------------------------------------------------------------
@@ -877,8 +900,11 @@ NUTRIENT_KEYS = {"protein": "PROTEIN", "sugar": "SUGAR", "fiber": "DIETARY_FIBER
 # is per open file description, so two threads would otherwise collide on it
 # and one would get a bare "another command is using ..." error.
 MUTEX = {"food": threading.Lock(), "weight": threading.Lock()}
-RUNNING = set()
-RUNNING_LOCK = threading.Lock()
+# One CLI process at a time, and no in-process edit while one runs. A sync
+# started by the browser regaining focus takes a few seconds; an edit made
+# meanwhile waits for it rather than failing on the collection lock.
+CLI_LOCK = threading.Lock()
+CLI_WAIT = 30
 
 
 class Refused(ValueError):
@@ -1020,15 +1046,17 @@ def ready(store, record, relative):
     raise Refused("no such record")
 
 
-def busy(kind):
-    with RUNNING_LOCK:
-        return kind in RUNNING or "all" in RUNNING
-
-
 def mutate(kind, relative, values=None, delete=False):
     """Edit or delete one record. Returns a summary of what changed."""
-    if busy(kind):
-        raise Refused("a command is running against this collection; try again")
+    if not CLI_LOCK.acquire(timeout=CLI_WAIT):
+        raise Refused("a command is still running against this collection; try again")
+    try:
+        return _mutate(kind, relative, values, delete)
+    finally:
+        CLI_LOCK.release()
+
+
+def _mutate(kind, relative, values, delete):
     config, store, record, path = locate(kind, relative)
     with MUTEX[kind]:
         with store.locked():                      # released before any subprocess
@@ -1176,6 +1204,8 @@ class Handler(BaseHTTPRequestHandler):
             payload = self.body()
             if path == "/api/targets":
                 return self.json(200, targets(payload))
+            if path == "/api/sync":
+                return self.json(200, sync_run(payload))
             if path != "/api/run":
                 return self.json(404, {"error": "not found"})
             arguments = argv(payload)

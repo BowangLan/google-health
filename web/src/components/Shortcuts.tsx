@@ -3,7 +3,7 @@ import { Dialog } from "./Dialog";
 const GLOBAL = [
   ["J", "Open today’s journal"],
   ["G", "Open trends"],
-  ["P", "Review sync"],
+  ["P", "Google Health sync"],
   ["?", "Keyboard shortcuts"],
   ["Esc", "Close dialog"],
 ];

@@ -1,0 +1,562 @@
+import { useEffect, useState } from "react";
+import type { SyncFailure, SyncRun, SyncTrigger } from "../hooks/useSync";
+import { parseDay } from "../lib/format";
+import { IconSync } from "../lib/icons";
+import type {
+  Kind,
+  Overview,
+  SyncCollection,
+  SyncDiff,
+  SyncOptions,
+  SyncResult,
+  SyncRow,
+} from "../lib/types";
+
+/*
+ * The sync surface reads two sources. The overview is the local truth: what
+ * this machine has that Google Health does not yet know about, refreshed
+ * after every write. The last run is what Google Health said the last time
+ * we asked: what came in, what was kept, and what could not be reconciled.
+ * Push is a button here, never a side effect of anything else.
+ */
+
+/* ---------- reading the state ---------- */
+
+interface LocalCounts {
+  /** New and edited records a push would send. */
+  pushable: number;
+  /** Local deletions a push would apply remotely once confirmed. */
+  deletions: number;
+  /** Conditions the CLI refuses to push past: recovery, orphans, unreadable files. */
+  blocked: number;
+}
+
+function localCounts(overview: Overview | null): LocalCounts {
+  const counts = { pushable: 0, deletions: 0, blocked: 0 };
+  for (const c of overview?.collections ?? []) {
+    if (c.error) {
+      counts.blocked += 1;
+      continue;
+    }
+    counts.pushable += c.new + c.edited;
+    counts.deletions += c.deleted;
+    counts.blocked += c.pending + c.awaiting + c.details.broken.length;
+  }
+  return counts;
+}
+
+export interface AttentionItem {
+  key: string;
+  kind: Kind | null;
+  label: string;
+  text: string;
+  diff: SyncDiff[];
+  advice?: string;
+  /** A pull is the documented next step. */
+  pull?: boolean;
+}
+
+const ADVICE = {
+  conf:
+    "Changed both here and in Google Health, so sync keeps both. Edit the local file to match one side, then push. From a terminal, push --force keeps yours and pull --force keeps Google's.",
+  missing:
+    "Deleted in Google Health but still here. Delete the local file to accept that, or remove its id line to push it as a new record.",
+  recover:
+    "A record may exist in Google Health without a saved id. Pull to match it before retrying.",
+  broken: "Fix the file before syncing. An unreadable record blocks its whole collection.",
+} as const;
+
+const TAG_LABEL: Record<string, string> = {
+  conf: "conflict",
+  missing: "gone remotely",
+  recover: "recovery",
+  FAIL: "failed",
+  part: "incomplete",
+  bad: "unreadable",
+  hold: "held",
+  held: "kept",
+  del: "delete",
+  delete: "delete",
+  edit: "edited",
+  new: "new",
+  refresh: "baseline",
+  ok: "sent",
+  adop: "recovered",
+  keep: "kept",
+};
+
+const label = (tag: string) => TAG_LABEL[tag] ?? tag;
+
+/** Rows from a run that need a person, as opposed to rows that report work. */
+const ATTENTION_TAGS = new Set(["conf", "missing", "FAIL", "part", "bad"]);
+
+export function attentionItems(
+  overview: Overview | null,
+  last: SyncRun | null,
+): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  const seen = new Set<string>();
+  const add = (item: AttentionItem) => {
+    if (seen.has(item.key)) return;
+    seen.add(item.key);
+    items.push(item);
+  };
+  for (const c of overview?.collections ?? []) {
+    if (c.error) {
+      add({ key: `${c.kind}:error:${c.error}`, kind: c.kind, label: "error", text: c.error, diff: [] });
+      continue;
+    }
+    for (const text of c.details.broken)
+      add({ key: `${c.kind}:bad:${text}`, kind: c.kind, label: "unreadable", text, diff: [], advice: ADVICE.broken });
+    for (const text of c.details.pending)
+      add({ key: `${c.kind}:recover:${text}`, kind: c.kind, label: "recovery", text, diff: [], advice: ADVICE.recover, pull: true });
+    for (const text of c.details.awaiting)
+      add({ key: `${c.kind}:awaiting:${text}`, kind: c.kind, label: "awaiting pull", text, diff: [], advice: ADVICE.recover, pull: true });
+  }
+  for (const c of last?.result.collections ?? []) {
+    for (const row of [...c.attention, ...c.events]) {
+      if (!ATTENTION_TAGS.has(row.tag)) continue;
+      add({
+        key: `${c.kind}:${row.tag}:${row.text}`,
+        kind: c.kind,
+        label: label(row.tag),
+        text: row.text,
+        diff: row.diff,
+        advice: row.tag === "conf" ? ADVICE.conf : row.tag === "missing" ? ADVICE.missing : undefined,
+      });
+    }
+  }
+  return items;
+}
+
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+export function relative(at: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 2) return "1 minute ago";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 2) return "1 hour ago";
+  if (hours < 24) return `${hours} hours ago`;
+  return "at " + new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/** A record's own wall-clock time, as written in its file. */
+function when(iso: string): string {
+  const day = parseDay(iso.slice(0, 10));
+  const date = Number.isNaN(day.getTime())
+    ? iso.slice(0, 10)
+    : day.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${date} ${iso.slice(11, 16)}`;
+}
+
+const sum = (collections: SyncCollection[], pick: (c: SyncCollection) => number) =>
+  collections.reduce((total, c) => total + pick(c), 0);
+
+export interface Changes {
+  /** Records that did not exist here before the pull. */
+  arrived: number;
+  /** Local copies the pull refreshed from Google Health. */
+  updated: number;
+  /** Local edits and deletions the pull left alone. */
+  held: number;
+  sent: number;
+  deleted: number;
+  recovered: number;
+  failed: number;
+}
+
+/**
+ * What a run changed. The CLI's "saved" count is every record it rewrote,
+ * unchanged ones included; the comparison rows are the actual difference, and
+ * a pull applies every incoming row because dirty records are never incoming.
+ */
+export function changes(result: SyncResult): Changes {
+  const cs = result.collections;
+  const pulled = cs.filter((c) => c.ran.includes("pull") && c.pull);
+  return {
+    arrived: sum(pulled, (c) => c.incoming.filter((r) => r.tag === "new").length),
+    updated: sum(pulled, (c) => c.incoming.filter((r) => r.tag !== "new").length),
+    held: sum(pulled, (c) => c.pull?.held ?? 0),
+    sent: sum(cs, (c) => c.push?.saved ?? 0),
+    deleted: sum(cs, (c) => c.push?.deleted ?? 0),
+    recovered: sum(cs, (c) => c.push?.recovered ?? 0),
+    failed: sum(cs, (c) => c.push?.failed ?? 0),
+  };
+}
+
+/** One sentence on what the last run did. */
+function outcome(run: SyncRun): string {
+  const cs = run.result.collections;
+  const made = changes(run.result);
+  const parts: string[] = [];
+  if (made.arrived && made.updated)
+    parts.push(`pulled ${made.arrived} new and updated ${made.updated}`);
+  else if (made.arrived) parts.push(`pulled ${count(made.arrived, "record")}`);
+  else if (made.updated) parts.push(`updated ${count(made.updated, "record")} from Google Health`);
+  if (made.held) parts.push(`kept ${count(made.held, "local change")}`);
+  if (made.sent) parts.push(`sent ${count(made.sent, "record")}`);
+  if (made.deleted) parts.push(`deleted ${made.deleted} in Google Health`);
+  if (made.failed) parts.push(`held ${count(made.failed, "record")}`);
+  if (parts.length === 0) {
+    if (cs.some((c) => !c.checked)) return "Not every collection was checked.";
+    const work = cs.some((c) => c.incoming.length + c.outgoing.length + c.attention.length > 0);
+    return work ? "Nothing changed." : "Everything matches Google Health.";
+  }
+  const text = parts.join(", ");
+  return text[0]!.toUpperCase() + text.slice(1) + ".";
+}
+
+function checkedRange(run: SyncRun): string {
+  const since = run.result.collections
+    .map((c) => c.since)
+    .filter((s): s is string => Boolean(s))
+    .sort()[0];
+  if (!since) return "";
+  const day = parseDay(since);
+  return Number.isNaN(day.getTime())
+    ? ""
+    : ` Checked from ${day.toLocaleDateString([], { month: "short", day: "numeric" })}.`;
+}
+
+export interface SyncSummary {
+  tone: "quiet" | "work" | "warn" | "busy";
+  label: string;
+  /** Short qualifier for the sidebar, usually a relative time. */
+  brief: string;
+  /** A sentence for the panel. */
+  detail: string;
+}
+
+export function describeSync({
+  overview,
+  last,
+  failure,
+  running,
+  attention,
+  now,
+}: {
+  overview: Overview | null;
+  last: SyncRun | null;
+  failure: SyncFailure | null;
+  running: SyncTrigger | null;
+  attention: number;
+  now: number;
+}): SyncSummary {
+  if (running) {
+    return { tone: "busy", label: "Syncing…", brief: "", detail: "Comparing with Google Health." };
+  }
+  if (failure) {
+    return { tone: "warn", label: "Sync failed", brief: relative(failure.at, now), detail: failure.message };
+  }
+  const checked = last ? `${outcome(last)}${checkedRange(last)}` : "";
+  if (attention > 0) {
+    return { tone: "warn", label: "Needs attention", brief: count(attention, "item"), detail: checked };
+  }
+  const local = localCounts(overview);
+  const waiting = local.pushable + local.deletions;
+  if (waiting > 0) {
+    return {
+      tone: "work",
+      label: `${waiting} to push`,
+      brief: last ? relative(last.at, now) : "",
+      detail: checked || "Push when you are ready.",
+    };
+  }
+  if (last) {
+    return { tone: "quiet", label: "Synced", brief: relative(last.at, now), detail: checked };
+  }
+  return {
+    tone: "quiet",
+    label: overview ? "Not checked yet" : "…",
+    brief: "",
+    detail: "The first sync runs when the app opens.",
+  };
+}
+
+function useNow(interval = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), interval);
+    return () => window.clearInterval(timer);
+  }, [interval]);
+  return now;
+}
+
+/* ---------- sidebar ---------- */
+
+export function SyncStatus({
+  overview,
+  last,
+  failure,
+  running,
+  expanded,
+  onClick,
+}: {
+  overview: Overview | null;
+  last: SyncRun | null;
+  failure: SyncFailure | null;
+  running: SyncTrigger | null;
+  expanded: boolean;
+  onClick: () => void;
+}) {
+  const now = useNow();
+  const attention = attentionItems(overview, last).length;
+  const summary = describeSync({ overview, last, failure, running, attention, now });
+  const line = summary.brief ? `${summary.label} · ${summary.brief}` : summary.label;
+  return (
+    <button
+      className={"sync-status " + summary.tone}
+      type="button"
+      onClick={onClick}
+      aria-expanded={expanded}
+      aria-haspopup="dialog"
+      aria-label={"Google Health sync, " + line}
+    >
+      <IconSync aria-hidden className={running ? "spin" : undefined} />
+      <span className="sync-status-text" aria-hidden>
+        <strong>Google Health</strong>
+        <span className="sync-status-line">{line}</span>
+      </span>
+    </button>
+  );
+}
+
+/* ---------- panel ---------- */
+
+function Diffs({ diff }: { diff: SyncDiff[] }) {
+  return (
+    <>
+      {diff.map((d) => (
+        <span className="sync-diff" key={d.field}>
+          {d.field}: {d.local} here, {d.remote} in Google Health
+        </span>
+      ))}
+    </>
+  );
+}
+
+function IncomingRow({ row }: { row: SyncRow }) {
+  return (
+    <li>
+      <span className="sync-tag">{label(row.tag)}</span>
+      <div className="sync-row-body">
+        <span className="sync-row-text">
+          {row.time ? (
+            <>
+              <time dateTime={row.time}>{when(row.time)}</time>
+              {row.detail}
+            </>
+          ) : row.path ? (
+            <>
+              {row.path}
+              {row.detail && `: ${row.detail}`}
+            </>
+          ) : (
+            row.text
+          )}
+        </span>
+        <Diffs diff={row.diff} />
+      </div>
+    </li>
+  );
+}
+
+const SHOWN = 8;
+
+export function SyncPanel({
+  overview,
+  last,
+  failure,
+  running,
+  onSync,
+}: {
+  overview: Overview | null;
+  last: SyncRun | null;
+  failure: SyncFailure | null;
+  running: SyncTrigger | null;
+  onSync: (options: SyncOptions) => Promise<unknown>;
+}) {
+  const now = useNow();
+  const [alsoDelete, setAlsoDelete] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const busy = running !== null;
+  const local = localCounts(overview);
+  const attention = attentionItems(overview, last);
+  const summary = describeSync({ overview, last, failure, running, attention: attention.length, now });
+  const collections = overview?.collections.filter((c) => !c.error) ?? [];
+
+  const runs = last?.result.collections ?? [];
+  const incoming = runs.flatMap((c) => c.incoming);
+  const kept = runs.flatMap((c) => c.events.filter((r) => r.phase === "pull" && r.tag === "held"));
+  const made = last ? changes(last.result) : null;
+  const deletionsHeld = runs.some((c) => c.deletions_held);
+
+  const waiting = local.pushable + local.deletions;
+  const deleting = alsoDelete && local.deletions > 0;
+  const pushLabel =
+    local.pushable > 0 && deleting
+      ? `Push ${local.pushable} and delete ${local.deletions}`
+      : local.pushable > 0
+        ? `Push ${count(local.pushable, "change")}`
+        : deleting
+          ? `Delete ${local.deletions} from Google Health`
+          : "Push";
+  const canPush = !busy && local.blocked === 0 && (local.pushable > 0 || deleting);
+
+  return (
+    <div className="sync-panel">
+      <header className={"sync-head " + summary.tone}>
+        <div>
+          <strong>
+            {summary.label}
+            {summary.brief && <span> · {summary.brief}</span>}
+          </strong>
+          <p>{summary.detail}</p>
+        </div>
+        <button
+          className="secondary"
+          type="button"
+          disabled={busy}
+          onClick={() => void onSync({ pull: true })}
+        >
+          <IconSync size={14} aria-hidden className={busy ? "spin" : undefined} />
+          {busy ? "Syncing…" : "Sync now"}
+        </button>
+      </header>
+
+      {attention.length > 0 && (
+        <section className="sync-section" aria-label="Needs attention">
+          <h3>
+            Needs attention <span>{attention.length}</span>
+          </h3>
+          <ul className="sync-rows">
+            {attention.map((item) => (
+              <li key={item.key}>
+                <span className="sync-tag warn">{item.label}</span>
+                <div className="sync-row-body">
+                  <span className="sync-row-text">{item.text}</span>
+                  <Diffs diff={item.diff} />
+                  {item.advice && <span className="sync-advice">{item.advice}</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {attention.some((item) => item.pull) && (
+            <div className="sync-actions">
+              <button className="secondary" type="button" disabled={busy} onClick={() => void onSync({ pull: true })}>
+                Pull now
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="sync-section" aria-label="To Google Health">
+        <h3>
+          To Google Health {waiting > 0 && <span>{waiting}</span>}
+        </h3>
+        {waiting === 0 ? (
+          <p className="sync-empty">
+            Nothing waiting. New entries are sent as you log them. Edits and
+            deletions collect here until you push.
+          </p>
+        ) : (
+          <>
+            {collections.map((c) => {
+              const rows: [string, string][] = [
+                ...c.details.new.map((t): [string, string] => ["new", t]),
+                ...c.details.edited.map((t): [string, string] => ["edited", t]),
+                ...c.details.deleted.map((t): [string, string] => ["delete", t]),
+              ];
+              if (rows.length === 0) return null;
+              const more = c.new + c.edited + c.deleted - rows.length;
+              return (
+                <div className="sync-group" key={c.kind}>
+                  <h4>{c.kind === "food" ? "Food" : "Weight"}</h4>
+                  <ul className="sync-rows">
+                    {rows.map(([tag, text], index) => (
+                      <li key={`${tag}-${index}-${text}`}>
+                        <span className={"sync-tag" + (tag === "delete" ? " bad" : "")}>{tag}</span>
+                        <span className="sync-row-text">{text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {more > 0 && <p className="sync-hint">and {more} more</p>}
+                </div>
+              );
+            })}
+            {local.deletions > 0 && (
+              <label className="sync-check">
+                <input
+                  type="checkbox"
+                  checked={alsoDelete}
+                  onChange={(event) => setAlsoDelete(event.target.checked)}
+                />
+                <span>Also delete {count(local.deletions, "record")} from Google Health</span>
+              </label>
+            )}
+            {deletionsHeld && !alsoDelete && (
+              <p className="sync-hint">The last push left the deletions in place. Tick the box to confirm them.</p>
+            )}
+            <div className="sync-actions">
+              <button
+                className="primary"
+                type="button"
+                disabled={!canPush}
+                onClick={() => void onSync({ pull: true, push: true, yes: deleting })}
+              >
+                {pushLabel}
+              </button>
+              <span className="sync-hint">
+                {local.blocked > 0
+                  ? "Resolve the items above first."
+                  : "Pulls first, then sends. Conflicts are kept, never overwritten."}
+              </span>
+            </div>
+          </>
+        )}
+      </section>
+
+      {last && (incoming.length > 0 || kept.length > 0) && (
+        <section className="sync-section" aria-label="From Google Health">
+          <h3>
+            From Google Health{" "}
+            <span>
+              {made && last.options.pull
+                ? count(made.arrived + made.updated, "record") + " pulled"
+                : count(incoming.length, "record")}
+            </span>
+          </h3>
+          <ul className="sync-rows">
+            {(showAll ? incoming : incoming.slice(0, SHOWN)).map((row, index) => (
+              <IncomingRow row={row} key={`${row.text}-${index}`} />
+            ))}
+          </ul>
+          {incoming.length > SHOWN && !showAll && (
+            <button className="text-action" type="button" onClick={() => setShowAll(true)}>
+              Show all {incoming.length}
+            </button>
+          )}
+          {kept.length > 0 && (
+            <p className="sync-hint">
+              Kept your local version of {count(kept.length, "record")}:{" "}
+              {kept.map((row) => row.path ?? row.text).join(", ")}
+            </p>
+          )}
+        </section>
+      )}
+
+      {last && (
+        <details className="sync-output">
+          <summary>Command output</summary>
+          <code>{last.result.command}</code>
+          {last.result.stdout.trim() && <pre>{last.result.stdout.trim()}</pre>}
+          {last.result.stderr.trim() && <pre className="err">{last.result.stderr.trim()}</pre>}
+        </details>
+      )}
+    </div>
+  );
+}

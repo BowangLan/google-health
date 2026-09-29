@@ -5,14 +5,15 @@ import { journalHref, trendsHref } from "./lib/navigation";
 import { useActivity } from "./hooks/useActivity";
 import { useHealth } from "./hooks/useHealth";
 import { useRoute } from "./hooks/useRoute";
+import { useSync, type SyncTrigger } from "./hooks/useSync";
 import { Journal } from "./components/Journal";
-import { PendingPill, PendingPopover } from "./components/Pending";
+import { SyncPanel, SyncStatus, changes } from "./components/Sync";
 import { SettingsPopover } from "./components/Settings";
 import { Trends } from "./components/Trends";
 import { ActivityPanel } from "./components/ActivityStrip";
 import { Dialog } from "./components/Dialog";
 import { ShortcutSheet } from "./components/Shortcuts";
-import type { RunCommand } from "./lib/types";
+import type { RunCommand, SyncResult } from "./lib/types";
 import { IconContext } from "@phosphor-icons/react";
 import {
   IconSettings,
@@ -31,6 +32,33 @@ export default function App() {
   const { route, navigate } = useRoute();
   const [revision, setRevision] = useState(0);
   const [panel, setPanel] = useState<Panel>(null);
+
+  // A sync's response carries the overview, so the sidebar updates at once.
+  // Only a run that changed records reloads the page underneath.
+  const afterSync = useCallback(
+    (result: SyncResult, trigger: SyncTrigger) => {
+      health.setOverview(result.overview);
+      const made = changes(result);
+      const changed =
+        made.arrived + made.updated + made.sent + made.deleted + made.recovered;
+      if (changed > 0) setRevision((current) => current + 1);
+      if (trigger !== "auto" || made.arrived + made.updated === 0) return;
+      const records = (n: number) => (n === 1 ? "1 record" : n + " records");
+      activity.notify(
+        made.arrived && made.updated
+          ? `${made.arrived} arrived, ${made.updated} updated from Google Health`
+          : made.arrived
+            ? records(made.arrived) + " arrived from Google Health"
+            : records(made.updated) + " updated from Google Health",
+      );
+    },
+    [health, activity],
+  );
+  const sync = useSync({
+    ready: Boolean(health.today) && !health.error,
+    record: activity.record,
+    onResult: afterSync,
+  });
 
   const run: RunCommand = useCallback(
     async (collection, command, values) => {
@@ -190,14 +218,14 @@ export default function App() {
               <IconKeyboard aria-hidden />
               Shortcuts<kbd aria-hidden>?</kbd>
             </button>
-            <div className="connection">
-              <span>Google Health</span>
-              <PendingPill
-                overview={health.overview}
-                expanded={panel === "sync"}
-                onClick={() => setPanel("sync")}
-              />
-            </div>
+            <SyncStatus
+              overview={health.overview}
+              last={sync.last}
+              failure={sync.failure}
+              running={sync.running}
+              expanded={panel === "sync"}
+              onClick={() => setPanel("sync")}
+            />
           </div>
         </aside>
         <main className="workspace" id="main" tabIndex={-1}>
@@ -258,25 +286,14 @@ export default function App() {
         </main>
       </div>
       {panel === "sync" && (
-        <Dialog title="Google Health sync" onClose={() => setPanel(null)}>
-          {health.overview ? (
-            <PendingPopover
-              overview={health.overview}
-              onClose={() => setPanel(null)}
-              onRun={async (collection, command, values) => {
-                const result = await run(collection, command, values);
-                setRevision((value) => value + 1);
-                await health
-                  .refresh()
-                  .catch(() =>
-                    activity.notify("Couldn’t refresh sync status.", true),
-                  );
-                return result;
-              }}
-            />
-          ) : (
-            <p className="note">Sync status is not available yet.</p>
-          )}
+        <Dialog title="Google Health" onClose={() => setPanel(null)}>
+          <SyncPanel
+            overview={health.overview}
+            last={sync.last}
+            failure={sync.failure}
+            running={sync.running}
+            onSync={(options) => sync.sync(options, "manual")}
+          />
         </Dialog>
       )}
       {panel === "settings" && (

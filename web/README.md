@@ -30,9 +30,21 @@ pins a day, and an explicit link opens that day's Journal. It contains no second
 journal or logging form. Range summaries are independent of the inspected day.
 
 The sidebar contains only Journal, Trends, and global Activity, Settings,
-Shortcuts, and sync controls. Page-specific date controls and keyboard shortcuts
-stay inside their page. Journal and Trends encode their state separately in the
-URL hash, so reloads, direct links, and browser Back restore the right context.
+Shortcuts, and the Google Health status. Page-specific date controls and
+keyboard shortcuts stay inside their page. Journal and Trends encode their
+state separately in the URL hash, so reloads, direct links, and browser Back
+restore the right context.
+
+Sync runs by itself in one direction only. When the app opens, and whenever
+the window regains focus after at least 45 seconds, it runs
+`hsync sync --all --pull`: a comparison with Google Health, then a pull that
+keeps local edits and deletions. The sidebar shows the outcome and when it
+last ran, and the journal reloads only when records actually changed. Push
+never happens on its own. The Google Health panel lists every local change;
+its push button pulls first and then sends them, and pending deletions reach
+Google Health only with the confirmation box ticked. Conflicts, recovery, and
+unreadable files appear under Needs attention with the fields that differ.
+The panel never passes `--force`; the text says how to resolve from a terminal.
 
 The interface is dark only, with neutral surfaces, white primary actions, and
 no green colors. Dialogs contain focus and restore it when closed. Pointer
@@ -45,7 +57,11 @@ page controls remain with their content.
 - `src/lib/types.ts` describes the server's JSON responses.
 - `src/lib/api.ts` is the only module that calls `fetch`.
 - `src/lib/navigation.ts` and `src/hooks/useRoute.ts` parse and manage routes.
-- `src/hooks/useHealth.ts` holds global metadata, targets, and sync overview.
+- `src/hooks/useHealth.ts` holds global metadata, targets, and the local sync
+  overview.
+- `src/hooks/useSync.ts` runs one sync at a time, automatically on open and on
+  focus, and keeps the last run. `src/components/Sync.tsx` derives the sidebar
+  status and the panel from the overview plus that last run.
 - `src/hooks/useJournal.ts` fetches the displayed day's records and rejects stale
   responses after navigation. `Journal.tsx` owns its dialogs and shortcuts.
 - `Trends.tsx` owns series loading, range selection, and chart inspection.
@@ -56,8 +72,12 @@ page controls remain with their content.
 
 Adding a record runs a CLI command and can sync that new record immediately.
 Editing and deleting call `/api/record`; the server takes the collection lock
-and refuses changes the sync engine cannot reconcile. Those local changes are
-reviewed through the global sync dialog. The UI never passes `--force`.
+and refuses changes the sync engine cannot reconcile. Those local changes wait
+in the Google Health panel for an explicit push. Syncing calls `/api/sync`,
+which runs the real `sync` command and returns its output both raw and parsed
+by `healthsync/sync_report.py`. The server runs one CLI process at a time, so
+a sync started by regaining focus delays a new entry by a few seconds rather
+than failing it on the collection lock. The UI never passes `--force`.
 
 ## Browser checks
 

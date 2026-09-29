@@ -1,5 +1,6 @@
 import type {
-  DayView, FoodSearch, MonthView, Overview, RunResult, Series, Targets, WeightSeries, Kind,
+  DayView, FoodSearch, MonthView, Overview, RunResult, Series, SyncOptions, SyncResult,
+  Targets, WeightSeries, Kind,
 } from "./types";
 
 export class ApiError extends Error {
@@ -47,6 +48,13 @@ export const getWeightSeries = (days: number, unit: string) =>
 /** One call, one filesystem scan: everything the Trends surface plots. */
 export const getSeries = (days: number, unit?: string) =>
   request<Series>(`/api/series?days=${days}${unit ? `&unit=${unit}` : ""}`);
+
+/**
+ * Runs the real `sync` command for both collections: compare with Google
+ * Health, then pull and/or push as asked. The server serialises these.
+ */
+export const runSync = (options: SyncOptions) =>
+  request<SyncResult>("/api/sync", json("POST", { collection: "all", ...options }));
 
 /** Runs a real CLI command. Every remote mutation goes through here. */
 export const runCommand = (
