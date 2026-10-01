@@ -13,7 +13,7 @@ fi
 case "${1:-login}" in
   login)
     exec "$AUTH_GHEALTH" auth login \
-      --scopes nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly
+      --scopes nutrition.readonly,nutrition.writeonly,health_metrics_and_measurements.readonly,health_metrics_and_measurements.writeonly,activity_and_fitness.readonly
     ;;
   status)
     exec "$AUTH_GHEALTH" auth status

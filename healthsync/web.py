@@ -32,7 +32,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from healthsync import sync_report
+from healthsync import burned, sync_report
 from healthsync.common import Clock, number, tidy_numbers
 from healthsync.config import resolve
 from healthsync.records.food import Food
@@ -338,6 +338,12 @@ def sync_run(payload):
     result.update(
         sync_report.parse(result["stdout"], result["stderr"], result["code"], kinds)
     )
+    if payload.get("pull"):
+        # Calories burned are read-only, so they refresh with every pull. A
+        # failure here (such as a missing scope) is reported but leaves the
+        # food and weight result alone.
+        refreshed = run(["cal", "pull", "--days", "7"])
+        result["burned"] = {"code": refreshed["code"], "stderr": refreshed["stderr"]}
     result["overview"] = overview()
     return result
 
@@ -459,6 +465,7 @@ def day_view(date_text=None):
         "food": food,
         "totals": totals,
         "weights": weights,
+        "burned": burned.load(config).get(day),
         "broken": [f"{store.rel(p)}: {e}" for p, e in broken]
         + [f"{weight_store.rel(p)}: {e}" for p, e in weight_broken],
     }

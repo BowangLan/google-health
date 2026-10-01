@@ -214,6 +214,34 @@ export function JournalEntries({
             )}
           </section>
           <section
+            className="surface burned-summary"
+            aria-label="Calories burned for displayed day"
+          >
+            <div className="surface-heading">
+              <h2>Burned</h2>
+              <span>Google Health</span>
+            </div>
+            {view.burned ? (
+              <div className="weight-reading">
+                <div>
+                  <strong>
+                    {num(view.burned.kcal)} <small>kcal</small>
+                  </strong>
+                  <span>
+                    {view.day === view.today ? "so far · " : ""}updated{" "}
+                    {view.burned.fetched.slice(0, 10) === view.day
+                      ? clock(view.burned.fetched)
+                      : view.burned.fetched.slice(5, 10) +
+                        " " +
+                        clock(view.burned.fetched)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="weight-empty">No calories burned pulled for this day.</p>
+            )}
+          </section>
+          <section
             className="surface weight-summary"
             aria-label="Weight for displayed day"
           >

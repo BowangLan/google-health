@@ -7,7 +7,7 @@ import datetime as dt
 import sys
 from zoneinfo import ZoneInfoNotFoundError
 
-from healthsync import food_commands
+from healthsync import burned, food_commands
 from healthsync import style as S
 from healthsync.common import Clock, number
 from healthsync.config import resolve
@@ -167,6 +167,14 @@ def parser():
     for kind in ("food", "weight"):
         group = command(sub, kind, common, help=f"manage {kind} records")
         record_commands(group.add_subparsers(dest="cmd", required=True), common, kind)
+    group = command(sub, "cal", common, help="daily calories burned (read-only)")
+    burned_sub = group.add_subparsers(dest="cmd", required=True)
+    for name, description in (
+        ("pull", "fetch daily totals from Google Health"),
+        ("list", "show saved daily totals"),
+    ):
+        sp = command(burned_sub, name, common, help=description)
+        sp.add_argument("--days", type=positive, default=7)
     shared_commands(sub, common, aggregate=True)
     return root
 
@@ -229,8 +237,30 @@ def run(engine, cfg, args):
     raise ValueError(f"unknown command {cmd}")
 
 
+def run_burned(args):
+    cfg = resolve(args, "food")
+    clock = Clock(cfg.timezone)
+    if args.cmd == "pull":
+        rows = burned.pull(cfg, clock, args.days)
+    else:
+        since = (clock.today() - dt.timedelta(days=args.days - 1)).isoformat()
+        rows = {day: v for day, v in burned.load(cfg).items() if day >= since}
+    for day, value in sorted(rows.items()):
+        kcal = f"{value['kcal']:,.0f}"
+        fetched = value["fetched"][:16].replace("T", " ")
+        print(f"  {S.dim(day)}  {S.bold(kcal)} kcal  {S.dim('fetched ' + fetched)}")
+    print(f"{S.bold(len(rows))} days")
+    return 0
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.kind == "cal":
+        try:
+            return run_burned(args)
+        except (ValueError, TypeError, OSError, RemoteError) as exc:
+            print(S.red(f"hsync: {exc}"), file=sys.stderr)
+            return 1
     aggregate = args.kind not in ("food", "weight")
     if aggregate:
         args.cmd = args.kind

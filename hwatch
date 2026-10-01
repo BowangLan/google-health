@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# hwatch — pull food and weight from Google Health on a fixed interval.
+# hwatch — pull food, weight, and calories burned on a fixed interval.
 #
 #   ./hwatch                 every 60s, last 7 days
 #   ./hwatch 300 --days 30   every 300s, extra args go to `hsync pull --all`
 #
-# Pull keeps local edits and deletions, so it is safe to leave running. A
-# failed pull (network, or another hsync holding the lock) is reported and
+# Calories burned always pull the last 7 days; extra args apply only to
+# food and weight. Pull keeps local edits and deletions, so it is safe to
+# leave running. A failed pull (network, or another hsync holding the lock) is reported and
 # retried on the next tick. Ctrl-C stops it.
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,5 +20,11 @@ trap 'kill $! 2>/dev/null; echo; exit 0' INT TERM
 while true; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] pull"
   "$here/hsync" pull --all "$@" || echo "pull failed (exit $?); retrying in ${interval}s" >&2
+  # Show today's total and the day count, not every day of the window.
+  if cal=$("$here/hsync" cal pull); then
+    printf '\ncal:\n%s\n' "$(tail -2 <<<"$cal")"
+  else
+    echo "cal pull failed (exit $?); retrying in ${interval}s" >&2
+  fi
   sleep "$interval" & wait $!
 done

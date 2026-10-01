@@ -55,6 +55,8 @@ export interface DayView {
   food: FoodRow[];
   totals: Totals;
   weights: WeightRow[];
+  /** Google's total calories burned for the day; null until pulled. */
+  burned: { kcal: number; fetched: string } | null;
   broken: string[];
 }
 
@@ -265,6 +267,8 @@ export interface SyncCollection {
 
 export interface SyncResult extends RunResult {
   collections: SyncCollection[];
+  /** The calories-burned refresh that follows a pull. */
+  burned?: { code: number | null; stderr: string };
   /** The local state right after the run, so no second request is needed. */
   overview: Overview;
 }
