@@ -210,34 +210,30 @@ a failed pull is reported and retried on the next interval.
 
 ## Configuration
 
-Configuration is optional. Defaults are `food/` and `weight/` in this repository,
+Configuration is optional. Defaults are `data/` in this repository,
 `America/Los_Angeles`, and kilograms. To customize them, copy
-[`hsync.toml.example`](hsync.toml.example) to `hsync.toml` and edit it:
+[`config.example.toml`](config.example.toml) to `config.toml` and edit it:
 
 ```toml
-food_dir = "~/Dropbox/health/food"
-weight_dir = "~/Dropbox/health/weight"
+data_dir = "~/Dropbox/health"
 timezone = "America/Los_Angeles"
 weight_unit = "kg"
 ```
 
-Configuration discovery checks the repository's `hsync.toml`, then `fsync.toml`,
-then `~/.config/hsync/config.toml`, then `~/.config/fsync/config.toml`.
-The first existing file is used. `--config`, `HSYNC_CONFIG`, or legacy
-`FSYNC_CONFIG` can name a specific file.
+`config.toml` in this repository is the only file read automatically.
+`--config` or `HSYNC_CONFIG` names a different one.
 
-Directory precedence is command-line flag, `HSYNC_FOOD_DIR`/`HSYNC_WEIGHT_DIR`,
-legacy `FSYNC_FOOD_DIR` for food, configuration, then defaults. Common flags work
-before or after the record type or command. Paths in configuration are relative
-to that file; command-line paths are relative to the current directory.
+The data directory holds `food/` and `weight/`. Its precedence is `--data-dir`,
+`HSYNC_DATA_DIR`, configuration, then the default. Common flags work before or
+after the record type or command. Paths in configuration are relative to that
+file; command-line paths are relative to the current directory.
 
-`ghealth` sets the binary path; `GHEALTH` overrides it. Index defaults are inside
-each collection. Optional `food_index` and `weight_index` override them; legacy
-`index` applies only to food. Never share an index between collections or point
-an existing index at an unrelated empty directory: missing files represent
-pending remote deletions. Indexes record their collection and directory to
-catch accidental reuse. To move a collection, move its entire folder with the
-index and recovery journal, then change its configured directory.
+`ghealth` sets the binary path; `GHEALTH` overrides it. Each collection keeps its
+index inside its folder. Never point an existing index at an unrelated empty
+directory: missing files represent pending remote deletions. Indexes record
+their collection and directory to catch accidental reuse. To move the data,
+move the entire data directory, including indexes and recovery journals, then
+change `data_dir`.
 
 Local commands lock the collection to prevent simultaneous `hsync`
 processes from issuing duplicate writes. Locks coordinate processes on this Mac;
@@ -246,20 +242,21 @@ they do not coordinate separate Macs through a cloud-synced folder.
 ## File format
 
 ```text
-food/
-  .fsync-index.json
-  .food-operations.json       # created when needed
-  2026-09-24/1230--chicken-burrito--<id>.md
-weight/
-  .hsync-index.json
-  .weight-operations.json     # created when needed
-  2026-09-24/0800--weight--<id>.md
+data/
+  food/
+    .fsync-index.json
+    .food-operations.json     # created when needed
+    2026-09-24/1230--chicken-burrito--<id>.md
+  weight/
+    .hsync-index.json
+    .weight-operations.json   # created when needed
+    2026-09-24/0800--weight--<id>.md
 ```
 
 Paths are decorative; fields inside the files determine their identity and date.
 Move or rename a record anywhere inside its collection, then run `tidy` to restore
 its normal location. New same-minute records receive a filename suffix until
-Google assigns an ID. The two collections must use separate, non-nested folders.
+Google assigns an ID.
 
 Before temporarily staging files outside a collection, check `status` and pending
 operations. Complete recovery before moving any affected files. An unpushed file
@@ -440,7 +437,7 @@ For UI development, run `./hweb` and, in another terminal,
 ## Documentation
 
 - [Web app guide](web/README.md): workflows, UI architecture, and browser checks.
-- [Configuration template](hsync.toml.example): available settings.
+- [Configuration template](config.example.toml): available settings.
 - Historical research: [food API and setup](docs/google-health-food-logging.html),
   [original fsync flows](docs/fsync-flows.html), and
   [Google CLI survey](docs/google-health-cli.html).

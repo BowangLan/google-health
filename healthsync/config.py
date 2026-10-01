@@ -1,4 +1,4 @@
-"""Per-collection configuration with legacy fsync compatibility."""
+"""Configuration from config.toml; collections live under one data directory."""
 
 import os
 from dataclasses import dataclass
@@ -8,22 +8,10 @@ from zoneinfo import ZoneInfo
 import tomllib
 
 HERE = Path(__file__).resolve().parent.parent
-SEARCH = (
-    HERE / "hsync.toml",
-    HERE / "fsync.toml",
-    Path.home() / ".config/hsync/config.toml",
-    Path.home() / ".config/fsync/config.toml",
-)
-KEYS = {
-    "food_dir",
-    "weight_dir",
-    "ghealth",
-    "index",
-    "food_index",
-    "weight_index",
-    "timezone",
-    "weight_unit",
-}
+CONFIG = HERE / "config.toml"
+KEYS = {"data_dir", "ghealth", "timezone", "weight_unit"}
+# Index names predate the shared data directory; existing indexes keep them.
+INDEXES = {"food": ".fsync-index.json", "weight": ".hsync-index.json"}
 
 
 @dataclass(frozen=True)
@@ -38,15 +26,11 @@ class Config:
 
 
 def resolve(args, kind):
-    named = (
-        getattr(args, "config", None)
-        or os.getenv("HSYNC_CONFIG")
-        or os.getenv("FSYNC_CONFIG")
-    )
+    named = getattr(args, "config", None) or os.getenv("HSYNC_CONFIG")
     source = (
         Path(named).expanduser().resolve()
         if named
-        else next((p for p in SEARCH if p.is_file()), None)
+        else (CONFIG if CONFIG.is_file() else None)
     )
     cfg = tomllib.loads(source.read_text()) if source else {}
     for key, value in cfg.items():
@@ -63,34 +47,13 @@ def resolve(args, kind):
             else default.resolve()
         )
 
-    directories = {}
-    for collection in ("food", "weight"):
-        key = f"{collection}_dir"
-        override = (
-            getattr(args, key, None)
-            or os.getenv(f"HSYNC_{key.upper()}")
-            or (os.getenv("FSYNC_FOOD_DIR") if collection == "food" else None)
-        )
-        directories[collection] = (
-            Path(override).expanduser().resolve()
-            if override
-            else path(key, HERE / collection)
-        )
-    food, weight = directories["food"], directories["weight"]
-    if food == weight or food in weight.parents or weight in food.parents:
-        raise ValueError(
-            "food_dir and weight_dir must be separate, non-nested directories"
-        )
-    indexes = {
-        "food": path("food_index", path("index", food / ".fsync-index.json")),
-        "weight": path("weight_index", weight / ".hsync-index.json"),
-    }
-    if indexes["food"] == indexes["weight"]:
-        raise ValueError("food and weight cannot share an index")
-    for collection, index in indexes.items():
-        other = directories["weight" if collection == "food" else "food"]
-        if index == other or other in index.parents:
-            raise ValueError(f"{collection} index cannot live in the other collection")
+    override = getattr(args, "data_dir", None) or os.getenv("HSYNC_DATA_DIR")
+    data = (
+        Path(override).expanduser().resolve()
+        if override
+        else path("data_dir", HERE / "data")
+    )
+    directory = data / kind
     timezone = cfg.get("timezone", "America/Los_Angeles")
     ZoneInfo(timezone)
     unit = cfg.get("weight_unit", "kg")
@@ -102,5 +65,5 @@ def resolve(args, kind):
         else path("ghealth", HERE / "google-health-cli/ghealth")
     )
     return Config(
-        kind, directories[kind], indexes[kind], ghealth, timezone, unit, source
+        kind, directory, directory / INDEXES[kind], ghealth, timezone, unit, source
     )

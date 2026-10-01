@@ -29,8 +29,7 @@ def common_options():
     parser = argparse.ArgumentParser(add_help=False)
     for flag, help_text in (
         ("config", "configuration file"),
-        ("food-dir", "food record directory"),
-        ("weight-dir", "weight record directory"),
+        ("data-dir", "directory holding food/ and weight/"),
     ):
         parser.add_argument(f"--{flag}", default=argparse.SUPPRESS, help=help_text)
     return parser

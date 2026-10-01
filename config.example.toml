@@ -1,0 +1,8 @@
+# Copy to config.toml. Every key is optional. Relative paths resolve against
+# this file; `~` is expanded. Run `./hsync config --all` to see the result.
+
+# Holds food/ and weight/, each with its own index and recovery journal.
+# data_dir = "~/Dropbox/health"         # default: ./data
+# timezone = "America/Los_Angeles"
+# weight_unit = "kg"                    # kg or lb; input/display only
+# ghealth = "/usr/local/bin/ghealth"    # default: ./google-health-cli/ghealth

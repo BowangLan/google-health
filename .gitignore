@@ -2,8 +2,7 @@
 # Personal health records stay untracked. Pull can restore synced fields;
 # private notes, pending changes, and recovery state need a separate backup.
 # ---------------------------------------------------------------------------
-/food/
-/weight/
+/data/
 
 # Credentials ---------------------------------------------------------------
 # The OAuth client secret lives at ~/.config/ghealth/client_secret.json; the
@@ -18,9 +17,8 @@ client_secret*.json
 .fsync-index.migrated*.json
 .last-create-response.json
 
-# Your config: local machine paths. fsync.toml.example is the tracked template.
-/fsync.toml
-/hsync.toml
+# Your config: local machine paths. config.example.toml is the tracked template.
+/config.toml
 /.hsync-web.json
 
 # Lavish review artifacts: generated reports for local review only.

@@ -854,10 +854,8 @@ class CliTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
-        self.config = self.root / "hsync.toml"
-        self.config.write_text(
-            'food_dir = "food"\nweight_dir = "weight"\nweight_unit = "lb"\n'
-        )
+        self.config = self.root / "config.toml"
+        self.config.write_text('data_dir = "."\nweight_unit = "lb"\n')
         self.output = io.StringIO()
         self.redirect = redirect_stdout(self.output)
         self.redirect.__enter__()
@@ -928,22 +926,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 2)
         self.assertEqual(main(["status", "--all", "--config", str(self.config)]), 0)
 
-    def test_separate_non_nested_directories_required(self):
-        self.config.write_text('food_dir = "same"\nweight_dir = "same/nested"\n')
-        with self.assertRaises(ValueError):
-            resolve(SimpleNamespace(config=str(self.config)), "weight")
-
-    def test_legacy_index_does_not_apply_to_weight(self):
-        self.config.write_text(
-            'index = "custom-food-index.json"\nfood_dir = "food"\nweight_dir = "weight"\n'
-        )
+    def test_collections_live_under_data_dir(self):
+        self.config.write_text('data_dir = "health"\n')
         args = SimpleNamespace(config=str(self.config))
-        self.assertEqual(
-            resolve(args, "food").index, self.root / "custom-food-index.json"
-        )
-        self.assertEqual(
-            resolve(args, "weight").index, self.root / "weight/.hsync-index.json"
-        )
+        food, weight = resolve(args, "food"), resolve(args, "weight")
+        self.assertEqual(food.directory, self.root / "health/food")
+        self.assertEqual(food.index, self.root / "health/food/.fsync-index.json")
+        self.assertEqual(weight.directory, self.root / "health/weight")
+        self.assertEqual(weight.index, self.root / "health/weight/.hsync-index.json")
+        override = SimpleNamespace(config=str(self.config), data_dir=str(self.root / "x"))
+        self.assertEqual(resolve(override, "weight").directory, self.root / "x/weight")
+
+    def test_old_per_collection_keys_are_rejected(self):
+        self.config.write_text('food_dir = "food"\n')
+        with self.assertRaises(ValueError):
+            resolve(SimpleNamespace(config=str(self.config)), "food")
 
 
 class TransportTests(unittest.TestCase):

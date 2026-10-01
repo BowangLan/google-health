@@ -57,8 +57,7 @@ def field(name, flag, kind, label, **extra):
 # Options accepted before or after any command, on every collection.
 PATHS = [
     field("config", "--config", "text", "Config file", hint="overrides discovery"),
-    field("food_dir", "--food-dir", "text", "Food directory"),
-    field("weight_dir", "--weight-dir", "text", "Weight directory"),
+    field("data_dir", "--data-dir", "text", "Data directory"),
 ]
 
 LIMIT = field("limit", "--limit", "int", "Page size", default=500,
@@ -750,7 +749,7 @@ DEFAULT_TARGETS = {"daily_kcal": None, "daily_protein_g": None, "weight_unit": N
 def targets(values=None):
     """Display preferences for the web app.
 
-    Kept out of hsync.toml deliberately: this file belongs to the web app, and
+    Kept out of config.toml deliberately: this file belongs to the web app, and
     writing the CLI's config would change what every terminal command prints.
     `weight_unit` here is a display override; null means follow the CLI's
     configured unit. It changes nothing on disk or at Google, which store
