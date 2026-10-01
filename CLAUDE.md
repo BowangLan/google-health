@@ -2,7 +2,7 @@
 
 This repo logs food and weight to Google Health using editable local files.
 A request to log a record authorizes creating and syncing that record immediately.
-Use the local CLI directly. `fsync` remains a food-only alias; `flog` aliases its add.
+Use the local CLI directly.
 
 ## Routine entries
 

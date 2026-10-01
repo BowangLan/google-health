@@ -863,33 +863,16 @@ class CliTests(unittest.TestCase):
         self.redirect.__enter__()
         self.addCleanup(self.redirect.__exit__, None, None, None)
 
-    def test_sync_preview_flags_work_for_collection_aggregate_and_legacy(self):
-        for args, legacy, calls in (
-            (["food", "sync", "-n"], False, 1),
-            (["weight", "sync", "--dry-run", "--pull", "--push"], False, 1),
-            (["sync", "--all", "-n"], False, 2),
-            (["sync", "-n"], True, 1),
+    def test_sync_preview_flags_work_for_collection_and_aggregate(self):
+        for args, calls in (
+            (["food", "sync", "-n"], 1),
+            (["weight", "sync", "--dry-run", "--pull", "--push"], 1),
+            (["sync", "--all", "-n"], 2),
         ):
             with self.subTest(args=args), patch.object(Engine, "sync", return_value=0) as sync:
-                self.assertEqual(main(args + ["--config", str(self.config)], legacy=legacy), 0)
+                self.assertEqual(main(args + ["--config", str(self.config)]), 0)
                 self.assertEqual(sync.call_count, calls)
                 self.assertTrue(all(call.args[-1] for call in sync.call_args_list))
-
-    def test_legacy_add_and_new_food_command_share_files(self):
-        args = [
-            "--config",
-            str(self.config),
-            "add",
-            "anytime",
-            "Burger",
-            "330",
-            "-p",
-            "23",
-            "--no-push",
-        ]
-        self.assertEqual(main(args, legacy=True), 0)
-        self.assertEqual(main(["food", "status", "--config", str(self.config)]), 0)
-        self.assertEqual(len(list((self.root / "food").rglob("*.md"))), 1)
 
     def test_weight_add_pounds_and_past_date_noon(self):
         self.assertEqual(

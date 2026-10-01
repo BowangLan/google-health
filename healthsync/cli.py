@@ -157,24 +157,18 @@ def record_commands(sub, common, kind):
         listing.add_argument("--unit", choices=("kg", "lb"))
 
 
-def parser(legacy=False):
+def parser():
     common = common_options()
     root = argparse.ArgumentParser(
-        prog="fsync" if legacy else "hsync",
+        prog="hsync",
         parents=[common],
         description="Sync editable food and weight files with Google Health.",
     )
-    sub = root.add_subparsers(dest="kind" if not legacy else "cmd", required=True)
-    if legacy:
-        root.set_defaults(kind="food")
-        record_commands(sub, common, "food")
-    else:
-        for kind in ("food", "weight"):
-            group = command(sub, kind, common, help=f"manage {kind} records")
-            record_commands(
-                group.add_subparsers(dest="cmd", required=True), common, kind
-            )
-        shared_commands(sub, common, aggregate=True)
+    sub = root.add_subparsers(dest="kind", required=True)
+    for kind in ("food", "weight"):
+        group = command(sub, kind, common, help=f"manage {kind} records")
+        record_commands(group.add_subparsers(dest="cmd", required=True), common, kind)
+    shared_commands(sub, common, aggregate=True)
     return root
 
 
@@ -236,8 +230,8 @@ def run(engine, cfg, args):
     raise ValueError(f"unknown command {cmd}")
 
 
-def main(argv=None, legacy=False):
-    args = parser(legacy).parse_args(argv)
+def main(argv=None):
+    args = parser().parse_args(argv)
     aggregate = args.kind not in ("food", "weight")
     if aggregate:
         args.cmd = args.kind
@@ -270,7 +264,7 @@ def main(argv=None, legacy=False):
         RemoteError,
         ZoneInfoNotFoundError,
     ) as exc:
-        print(S.red(f"{'fsync' if legacy else 'hsync'}: {exc}"), file=sys.stderr)
+        print(S.red(f"hsync: {exc}"), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print(

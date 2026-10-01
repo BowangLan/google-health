@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# flog — kept as a shorthand for `fsync add`.
-#
-# It used to POST straight to the API and leave no file behind, which meant
-# entries logged this way were invisible to fsync until the next pull. Now it
-# is the same code path: the file is written first, then pushed.
-exec "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fsync" add "$@"

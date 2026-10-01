@@ -113,9 +113,6 @@ changes. It searches local files and offers up to ten distinct names, using the
 latest entry for each. Pull a wider window to find older foods. Google may
 recompute nutrition for foods that retain a catalog reference.
 
-`./fsync COMMAND` is an alias for `./hsync food COMMAND`; `./flog ...` is shorthand
-for `./fsync add ...`. Existing food files need no migration.
-
 ### Weight
 
 ```sh
@@ -242,7 +239,7 @@ pending remote deletions. Indexes record their collection and directory to
 catch accidental reuse. To move a collection, move its entire folder with the
 index and recovery journal, then change its configured directory.
 
-Local commands lock the collection to prevent simultaneous `hsync` and `fsync`
+Local commands lock the collection to prevent simultaneous `hsync`
 processes from issuing duplicate writes. Locks coordinate processes on this Mac;
 they do not coordinate separate Macs through a cloud-synced folder.
 
