@@ -369,8 +369,32 @@ class Engine:
             write_entry(path, fm, body)
             self.store.relocate(path, fm)
             changed += 1
-        # Absence from a date query does not prove deletion: it may have moved.
+        # A synced file Google no longer has was deleted remotely. Absence from
+        # the date query alone could mean it moved, so confirm by id first.
+        removed = 0
         gone = set()
+        for eid, (path, local, _) in self.scan()[0].items():
+            if (
+                eid in returned
+                or eid in reserved
+                or not since <= self.record.day(local) <= self.clock.today().isoformat()
+                or self.remote_record(eid) is not None
+            ):
+                continue
+            if self.record.dirty(local) and not force:
+                print(
+                    f"  {S.warn('missing', 8)}{self.store.rel(path)}: "
+                    f"{S.dim('deleted in Google Health; local edits kept')}"
+                )
+                held += 1
+                continue
+            path.unlink()
+            if path.parent != self.store.directory and not any(path.parent.iterdir()):
+                path.parent.rmdir()
+            print(f"  {S.bad('del')}{self.store.rel(path)}: {S.dim('deleted in Google Health')}")
+            gone.add(eid)
+            removed += 1
+        # Absence from a date query does not prove deletion: it may have moved.
         for eid, meta in doomed.items():
             if (
                 eid not in returned
@@ -383,7 +407,7 @@ class Engine:
         self.store.save_index(self.scan()[0], drop=gone)
         print(
             f"{S.bold('pulled')} {len(points)} {self.record.kind} records: "
-            f"{changed} saved, {held} held"
+            f"{changed} saved, {removed} removed, {held} held"
         )
         return 1 if self.store.operations() or self.scan()[2] else 0
 
@@ -559,7 +583,14 @@ class Engine:
                     points.append(point)
             if other is None:
                 missing += 1
-                attention.append(("missing", label + ": gone remotely; kept locally", []))
+                if label in pending_paths or eid in pending_ids:
+                    continue
+                if self.record.dirty(fm):
+                    attention.append((
+                        "missing", label + ": deleted in Google Health; local edits kept", []
+                    ))
+                else:
+                    incoming.append(("delete", label + ": deleted in Google Health", []))
             elif self.record.digest(fm) != self.record.digest(other):
                 different += 1
                 if self.record.dirty(fm):

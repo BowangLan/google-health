@@ -30,7 +30,9 @@ COMPARISON = re.compile(
     r"^comparison (\d+) match Google Health, (\d+) differ, "
     r"(\d+) missing remotely, (\d+) remote only$"
 )
-PULLED = re.compile(r"^pulled (\d+) (?:food|weight) records: (\d+) saved, (\d+) held$")
+PULLED = re.compile(
+    r"^pulled (\d+) (?:food|weight) records: (\d+) saved, (\d+) removed, (\d+) held$"
+)
 PUSHED = re.compile(
     r"^(pushed|would push) (\d+) saved, (\d+) deleted, (\d+) already absent, "
     r"(\d+) recovered, (\d+) held or failed$"
@@ -154,7 +156,9 @@ def parse(stdout, stderr="", code=0, kinds=("food", "weight")):
             continue
         matched = PULLED.match(line)
         if matched:
-            current["pull"] = dict(zip(("fetched", "saved", "held"), map(int, matched.groups())))
+            current["pull"] = dict(
+                zip(("fetched", "saved", "removed", "held"), map(int, matched.groups()))
+            )
             continue
         matched = PUSHED.match(line)
         if matched:

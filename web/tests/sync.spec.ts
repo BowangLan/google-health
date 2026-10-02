@@ -31,7 +31,7 @@ test("the app pulls on open, once per return to the window, and shows what arriv
           diff: [],
         },
       ],
-      pull: { fetched: 2, saved: 2, held: 0 },
+      pull: { fetched: 2, saved: 2, removed: 0, held: 0 },
     }),
     syncCollection("weight"),
   ];

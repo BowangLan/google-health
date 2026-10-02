@@ -60,7 +60,7 @@ const ADVICE = {
   conf:
     "Changed both here and in Google Health, so sync keeps both. Edit the local file to match one side, then push. From a terminal, push --force keeps yours and pull --force keeps Google's.",
   missing:
-    "Deleted in Google Health but still here. Delete the local file to accept that, or remove its id line to push it as a new record.",
+    "Deleted in Google Health but edited here, so pull kept it. Delete the local file to accept the deletion, or remove its id line to push it as a new record.",
   recover:
     "A record may exist in Google Health without a saved id. Pull to match it before retrying.",
   broken: "Fix the file before syncing. An unreadable record blocks its whole collection.",
@@ -160,6 +160,8 @@ export interface Changes {
   arrived: number;
   /** Local copies the pull refreshed from Google Health. */
   updated: number;
+  /** Local copies the pull deleted because Google Health deleted them. */
+  removed: number;
   /** Local edits and deletions the pull left alone. */
   held: number;
   sent: number;
@@ -178,7 +180,8 @@ export function changes(result: SyncResult): Changes {
   const pulled = cs.filter((c) => c.ran.includes("pull") && c.pull);
   return {
     arrived: sum(pulled, (c) => c.incoming.filter((r) => r.tag === "new").length),
-    updated: sum(pulled, (c) => c.incoming.filter((r) => r.tag !== "new").length),
+    updated: sum(pulled, (c) => c.incoming.filter((r) => r.tag !== "new" && r.tag !== "delete").length),
+    removed: sum(pulled, (c) => c.pull?.removed ?? 0),
     held: sum(pulled, (c) => c.pull?.held ?? 0),
     sent: sum(cs, (c) => c.push?.saved ?? 0),
     deleted: sum(cs, (c) => c.push?.deleted ?? 0),
@@ -196,6 +199,7 @@ function outcome(run: SyncRun): string {
     parts.push(`pulled ${made.arrived} new and updated ${made.updated}`);
   else if (made.arrived) parts.push(`pulled ${count(made.arrived, "record")}`);
   else if (made.updated) parts.push(`updated ${count(made.updated, "record")} from Google Health`);
+  if (made.removed) parts.push(`removed ${count(made.removed, "record")} deleted in Google Health`);
   if (made.held) parts.push(`kept ${count(made.held, "local change")}`);
   if (made.sent) parts.push(`sent ${count(made.sent, "record")}`);
   if (made.deleted) parts.push(`deleted ${made.deleted} in Google Health`);
@@ -526,7 +530,7 @@ export function SyncPanel({
             From Google Health{" "}
             <span>
               {made && last.options.pull
-                ? count(made.arrived + made.updated, "record") + " pulled"
+                ? count(made.arrived + made.updated + made.removed, "record") + " pulled"
                 : count(incoming.length, "record")}
             </span>
           </h3>

@@ -485,6 +485,38 @@ class SyncTests(unittest.TestCase):
         self.assertFalse(any(c[0] == "update" for c in e.remote.calls))
         self.assertIn(("get", "1234"), e.remote.calls)
 
+    def test_pull_removes_local_copy_of_a_remotely_deleted_record(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        with redirect_stdout(io.StringIO()):
+            e.add(self.weight(82) | {"time": "2026-09-24T09:00:00-07:00"}, no_push=True)
+        e.remote.points.clear()
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(path.exists())
+        self.assertNotIn("1234", e.store.load_index())
+        self.assertIn("1 removed", self.output.getvalue())
+        # A new local file has no id, so it is pushed rather than removed.
+        self.assertEqual(len(e.store.scan()[1]), 1)
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(len(e.remote.points), 1)
+
+    def test_pull_keeps_an_edited_record_deleted_remotely(self):
+        e = self.engine
+        path, _, _ = self.pull_one()
+        self.edit(path, "weight_kg", 90)
+        e.remote.points.clear()
+        self.assertEqual(e.pull(), 0)
+        self.assertTrue(path.exists())
+        self.assertIn("deleted in Google Health; local edits kept", self.output.getvalue())
+
+    def test_pull_does_not_remove_a_record_that_moved_outside_the_window(self):
+        e = self.engine
+        path, fm, _ = self.pull_one()
+        e.remote.put(fm | {"time": "2026-08-01T08:00:00-07:00"}, "1234")
+        self.assertEqual(e.pull(), 0)
+        self.assertTrue(path.exists())
+        self.assertIn("0 removed", self.output.getvalue())
+
     def test_missing_remote_is_a_conflict_and_not_recreated(self):
         e = self.engine
         path, _, _ = self.pull_one()

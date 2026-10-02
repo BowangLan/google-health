@@ -249,7 +249,7 @@ export interface SyncCollection {
     remote_only: number;
   } | null;
   ran: ("pull" | "push")[];
-  pull: { fetched: number; saved: number; held: number } | null;
+  pull: { fetched: number; saved: number; removed: number; held: number } | null;
   push: {
     saved: number;
     deleted: number;

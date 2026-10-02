@@ -151,7 +151,7 @@ export function syncCollection(
     attention: [],
     comparison: { matched: 10, different: 0, missing: 0, remote_only: 0 },
     ran: ["pull"],
-    pull: { fetched: 0, saved: 0, held: 0 },
+    pull: { fetched: 0, saved: 0, removed: 0, held: 0 },
     push: null,
     dry_run: false,
     events: [],

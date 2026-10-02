@@ -40,10 +40,14 @@ export default function App() {
       health.setOverview(result.overview);
       const made = changes(result);
       const changed =
-        made.arrived + made.updated + made.sent + made.deleted + made.recovered;
+        made.arrived + made.updated + made.removed + made.sent + made.deleted + made.recovered;
       if (changed > 0) setRevision((current) => current + 1);
-      if (trigger !== "auto" || made.arrived + made.updated === 0) return;
+      if (trigger !== "auto" || made.arrived + made.updated + made.removed === 0) return;
       const records = (n: number) => (n === 1 ? "1 record" : n + " records");
+      if (made.arrived + made.updated === 0) {
+        activity.notify(records(made.removed) + " removed, deleted in Google Health");
+        return;
+      }
       activity.notify(
         made.arrived && made.updated
           ? `${made.arrived} arrived, ${made.updated} updated from Google Health`

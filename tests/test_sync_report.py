@@ -111,7 +111,7 @@ class SyncReportTests(unittest.TestCase):
         self.assertEqual(code, 0)
         [weight] = parse(output, "", code, kinds=("weight",))["collections"]
         self.assertEqual(weight["ran"], ["pull", "push"])
-        self.assertEqual(weight["pull"], {"fetched": 1, "saved": 1, "held": 0})
+        self.assertEqual(weight["pull"], {"fetched": 1, "saved": 1, "removed": 0, "held": 0})
         self.assertEqual(
             weight["push"],
             {"saved": 1, "deleted": 0, "absent": 0, "recovered": 0, "failed": 0},
@@ -130,7 +130,7 @@ class SyncReportTests(unittest.TestCase):
         e.remote.put(self.weight(81))
         output, code = self.run_sync(pull=True)
         [weight] = parse(output, "", code, kinds=("weight",))["collections"]
-        self.assertEqual(weight["pull"], {"fetched": 1, "saved": 0, "held": 1})
+        self.assertEqual(weight["pull"], {"fetched": 1, "saved": 0, "removed": 0, "held": 1})
         [held] = [row for row in weight["events"] if row["phase"] == "pull"]
         self.assertEqual(held["tag"], "held")
         self.assertEqual(held["path"], e.store.rel(path))
