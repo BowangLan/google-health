@@ -203,8 +203,8 @@ saved baseline; it does not contact Google. `sync` separately reports how many
 records match Google Health, differ, are missing remotely, or exist only remotely.
 That comparison describes the state before any selected pull/push actions.
 
-To keep both collections current, `./hwatch` runs `hsync pull --all` every 60
-seconds until stopped. A leading number sets the interval in seconds; remaining
+To keep both collections current, `./hwatch` runs `hsync pull --all` every 300
+seconds (5 minutes) until stopped. A leading number sets the interval in seconds; remaining
 arguments go to pull, for example `./hwatch 300 --days 30`. It never pushes, and
 a failed pull is reported and retried on the next interval.
 

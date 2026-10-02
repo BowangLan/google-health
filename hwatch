@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hwatch — pull food, weight, and calories burned on a fixed interval.
 #
-#   ./hwatch                 every 60s, last 7 days
+#   ./hwatch                 every 300s, last 7 days
 #   ./hwatch 300 --days 30   every 300s, extra args go to `hsync pull --all`
 #
 # Calories burned always pull the last 7 days; extra args apply only to
@@ -10,7 +10,7 @@
 # retried on the next tick. Ctrl-C stops it.
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-interval=60
+interval=300
 if [[ ${1:-} =~ ^[0-9]+$ ]]; then
   interval=$1
   shift
