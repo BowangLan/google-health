@@ -24,6 +24,9 @@ client_secret*.json
 # Lavish review artifacts: generated reports for local review only.
 /.lavish/
 
+# Local design references.
+/docs/design-refs/
+
 # Google's CLI: a clone plus a compiled Go binary, restored by setup-wizard.sh.
 /google-health-cli/
 

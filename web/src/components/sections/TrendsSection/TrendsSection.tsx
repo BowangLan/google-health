@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { IconWeight, IconFood, IconPulse, IconBurned } from "../lib/icons";
-import * as api from "../lib/api";
-import { centredMean, meanOfLogged, ratePerWeek } from "../lib/series";
-import { makeDayScale } from "../lib/scale";
-import { RANGES } from "../lib/navigation";
-import { budget } from "../lib/budget";
-import { num, parseDay } from "../lib/format";
-import type { Series } from "../lib/types";
-import { WeightChart } from "./charts/WeightChart";
-import { IntakeChart, NutrientChart } from "./charts/IntakeChart";
+import {
+  IconWeight,
+  IconFood,
+  IconPulse,
+  IconBurned,
+} from "../../../lib/icons";
+import * as api from "../../../lib/api";
+import { centredMean, meanOfLogged, ratePerWeek } from "../../../lib/series";
+import { makeDayScale } from "../../../lib/scale";
+import { RANGES } from "../../../lib/navigation";
+import { budget } from "../../../lib/budget";
+import { num, parseDay } from "../../../lib/format";
+import type { Series } from "../../../lib/types";
+import { WeightChart } from "../../charts/WeightChart";
+import { IntakeChart, NutrientChart } from "../../charts/IntakeChart";
 
 const INITIAL_WIDTH = 720;
 const GUTTER = { left: 52, right: 44 };
@@ -63,7 +68,11 @@ function Stat({
  * Calories left today: burned so far, minus eaten, minus the deficit goal.
  * Burned keeps rising through the day, so the budget does too.
  */
-function todayBudget(series: Series): { value: string; tone: string; hint: string } {
+function todayBudget(series: Series): {
+  value: string;
+  tone: string;
+  hint: string;
+} {
   const row = series.rows.find((r) => r.day === series.today);
   const deficit = series.targets.daily_deficit_kcal ?? 0;
   if (!row || row.burned === null)
@@ -79,7 +88,7 @@ function todayBudget(series: Series): { value: string; tone: string; hint: strin
   };
 }
 
-export function Trends({
+export function TrendsSection({
   unit,
   days,
   selectedDay,
@@ -200,7 +209,11 @@ export function Trends({
           <h2>Trends</h2>
           {rangeControl}
         </div>
-        <div className="skeleton-stats" role="status" aria-label="Loading trends">
+        <div
+          className="skeleton-stats"
+          role="status"
+          aria-label="Loading trends"
+        >
           {[0, 1, 2, 3, 4].map((i) => (
             <i key={i} />
           ))}
@@ -228,7 +241,6 @@ export function Trends({
   return (
     <section className="trends" aria-label="Trends" aria-busy={loading}>
       <div className="trends-bar">
-        <h2>Trends</h2>
         <span className="range-dates">
           {parseDay(series.since).toLocaleDateString([], {
             day: "numeric",
@@ -297,7 +309,10 @@ export function Trends({
           hint={`Over ${stats.protein.days} days`}
         />
       </div>
-      <section className="tile chart-panel" aria-label="Weight and nutrition charts">
+      <section
+        className="tile chart-panel"
+        aria-label="Weight and nutrition charts"
+      >
         <div className="chart-panel-heading">
           <h3>Weight & nutrition</h3>
           <span className="chart-key">

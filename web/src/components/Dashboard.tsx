@@ -9,7 +9,7 @@ import { Day } from "./Day";
 import { Dialog } from "./Dialog";
 import { Composer } from "./Composer";
 import { WeightComposer } from "./WeightComposer";
-import { Trends } from "./Trends";
+import { TrendsSection } from "./sections/TrendsSection/TrendsSection";
 
 type Entry = { kind: "food"; source?: FoodRow } | { kind: "weight" } | null;
 
@@ -188,7 +188,7 @@ export function Dashboard({
             </div>
           )}
         </div>
-        <Trends
+        <TrendsSection
           unit={unit}
           days={days}
           selectedDay={day}
