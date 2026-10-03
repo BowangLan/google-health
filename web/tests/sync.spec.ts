@@ -4,7 +4,7 @@ import { cleanOverview, mockHealth, syncCollection, TODAY } from "./fixtures";
 const status = (page: import("@playwright/test").Page) =>
   page.getByRole("button", { name: /Google Health sync/ });
 
-test("the app pulls on open, once per return to the window, and shows what arrived", async ({
+test("the app skips sync on load, pulls once per return to the window, and shows what arrived", async ({
   page,
 }) => {
   await page.clock.install();
@@ -39,6 +39,18 @@ test("the app pulls on open, once per return to the window, and shows what arriv
   await expect(
     page.getByRole("heading", { name: "Today", exact: true }),
   ).toBeVisible();
+  await expect(status(page)).toHaveAccessibleName(/Not checked yet/);
+  await page.clock.fastForward(60_000);
+  expect(state.syncCalls).toHaveLength(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Today", exact: true }),
+  ).toBeVisible();
+  await expect(status(page)).toHaveAccessibleName(/Not checked yet/);
+  await page.clock.fastForward(60_000);
+  expect(state.syncCalls).toHaveLength(0);
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => state.syncCalls.length).toBe(1);
   expect(state.syncCalls[0]).toEqual({ collection: "all", pull: true });
   await expect(status(page)).toHaveAccessibleName(/Synced · just now/);
@@ -46,7 +58,7 @@ test("the app pulls on open, once per return to the window, and shows what arriv
     "2 records arrived from Google Health",
   );
   // Records arrived, so the displayed day reloaded once.
-  await expect.poll(() => state.dayReads.length).toBe(2);
+  await expect.poll(() => state.dayReads.length).toBe(3);
 
   // Coming straight back to the window shares the run that just finished.
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -110,8 +122,8 @@ test("push is a button: local changes are listed and deletions confirmed explici
     }),
   ];
   await push.click();
-  await expect.poll(() => state.syncCalls.length).toBe(2);
-  expect(state.syncCalls[1]).toEqual({
+  await expect.poll(() => state.syncCalls.length).toBe(1);
+  expect(state.syncCalls[0]).toEqual({
     collection: "all",
     pull: true,
     push: true,
@@ -129,9 +141,11 @@ test("a failed sync is visible and can be retried from the panel", async ({
   const state = await mockHealth(page);
   state.failSync = true;
   await page.goto("/");
-  await expect(status(page)).toHaveAccessibleName(/Sync failed/);
+  await expect(status(page)).toHaveAccessibleName(/Not checked yet/);
   await status(page).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Sync now", exact: true }).click();
+  await expect(status(page)).toHaveAccessibleName(/Sync failed/);
   await expect(dialog).toContainText(
     "could not read credentials; run ghealth auth login",
   );
@@ -163,9 +177,11 @@ test("conflicts and recovery show up as attention with the fields that differ", 
     syncCollection("weight"),
   ];
   await page.goto("/");
-  await expect(status(page)).toHaveAccessibleName(/Needs attention · 1 item/);
+  await expect(status(page)).toHaveAccessibleName(/Not checked yet/);
   await status(page).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Sync now", exact: true }).click();
+  await expect(status(page)).toHaveAccessibleName(/Needs attention · 1 item/);
   await expect(dialog).toContainText("conflict");
   await expect(dialog).toContainText("kcal: 180 here, 200 in Google Health");
   await expect(dialog).toContainText("sync keeps both");

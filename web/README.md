@@ -41,10 +41,11 @@ shows Google Health sync status, while a command runs it shows a waveform, and
 notices grow it into a card for a few seconds. Clicking it opens the sync
 sheet, which grows out of the same spot.
 
-Sync runs by itself in one direction only. When the app opens, and whenever
-the window regains focus after at least 45 seconds, it runs
+Sync runs by itself in one direction only. When the window regains focus,
+and at least 45 seconds have passed since the last sync, it runs
 `hsync sync --all --pull`: a comparison with Google Health, then a pull that
-keeps local edits and deletions. The island shows the outcome and when it
+keeps local edits and deletions. Loading or reloading the app does not sync.
+The island shows the outcome and when it
 last ran, and the dashboard reloads only when records actually changed. Push
 never happens on its own. The Google Health panel lists every local change;
 its push button pulls first and then sends them, and pending deletions reach
@@ -69,7 +70,7 @@ Apple's copyright, so they are kept out of the repository.
 - `src/lib/navigation.ts` and `src/hooks/useRoute.ts` parse and manage routes.
 - `src/hooks/useHealth.ts` holds global metadata, targets, and the local sync
   overview.
-- `src/hooks/useSync.ts` runs one sync at a time, automatically on open and on
+- `src/hooks/useSync.ts` runs one sync at a time, automatically on
   focus, and keeps the last run. `src/components/Sync.tsx` derives the status
   summary and the sync sheet from the overview plus that last run.
   `Island.tsx` renders that summary and the notices.

@@ -27,7 +27,7 @@ export const AUTO_GAP_MS = 45_000;
 export const AUTO_OPTIONS: SyncOptions = { pull: true };
 
 /**
- * One sync at a time, automatically on open and on focus, manually from the
+ * One sync at a time, automatically on focus, manually from the
  * panel. Push is never automatic: edits and deletions wait for a click.
  */
 export function useSync({
@@ -94,7 +94,6 @@ export function useSync({
       if (Date.now() - startedAt.current < AUTO_GAP_MS) return;
       void sync(AUTO_OPTIONS, "auto");
     };
-    auto();
     window.addEventListener("focus", auto);
     document.addEventListener("visibilitychange", auto);
     return () => {

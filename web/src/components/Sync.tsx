@@ -276,7 +276,7 @@ export function describeSync({
     tone: "quiet",
     label: overview ? "Not checked yet" : "…",
     brief: "",
-    detail: "The first sync runs when the app opens.",
+    detail: "Use Sync now to check Google Health.",
   };
 }
 
