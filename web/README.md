@@ -3,6 +3,53 @@
 React + TypeScript on Vite. The Python server in `healthsync/web.py` reads the
 local records and runs `./hsync` for commands that reach Google Health.
 
+## UI component setup
+
+TypeScript was already configured. Tailwind CSS 4 is installed through
+`@tailwindcss/vite`; `src/styles.css` imports its theme and utilities without
+Preflight so the dashboard keeps its existing base styles. `components.json`
+provides the shadcn CLI configuration, and both TypeScript and Vite resolve
+`@/` to `src/`. The `cn` helper in `src/lib/utils.ts` combines `clsx` and
+`tailwind-merge`.
+
+Application components live in `src/components`. Reusable UI components belong
+in `src/components/ui`, the `/components/ui` path relative to the source root.
+This folder keeps reusable primitives separate from dashboard-specific code
+and gives the shadcn CLI and copied components a consistent import location.
+Global styles remain in `src/styles.css`.
+
+The nutrition tile uses `src/components/ui/apple-activity-ring.tsx`, adapted
+from the MIT-licensed Kokonut UI component supplied for this app. Its
+`activities` prop accepts label, percentage, color, size, current, target, and
+unit; optional `endColor` controls the gradient. A null percentage represents
+an unavailable target. Energy uses eaten/burned calories and protein uses the
+configured daily goal. Both keep animating through multiple laps, with the
+overflow painted over the completed ring. `compact`, `ringSize`, `strokeWidth`,
+and custom legend children fit it into the existing responsive nutrition tile.
+It uses Framer Motion hooks with no context provider, images, or icons required.
+Reduced motion and keyboard input show progress immediately.
+
+`src/components/ui/demo.tsx` exports the supplied standalone demo with the
+original Move, Exercise, and Stand data. Import it into a page to display the
+full card. The main dashboard supplies live nutrition data instead.
+
+For a fresh Vite project, the equivalent setup is:
+
+```sh
+pnpm create vite health-web --template react-ts
+cd health-web
+pnpm install
+pnpm add -D tailwindcss @tailwindcss/vite
+# Configure the Vite plugin, CSS imports, and @/ alias as in this repo.
+pnpm dlx shadcn@latest init
+pnpm add framer-motion clsx tailwind-merge
+```
+
+This repository already includes that configuration; run `pnpm install` to
+restore its dependencies. See the official [Tailwind Vite setup](https://tailwindcss.com/docs/installation/using-vite),
+[Preflight import options](https://tailwindcss.com/docs/preflight), and
+[shadcn Vite setup](https://ui.shadcn.com/docs/installation/vite).
+
 ## Running
 
 From `web/`:

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AppleActivityCard } from "@/components/ui/apple-activity-ring";
 import { MEALS, MEAL_NAME, clock, num, parseDay, shiftDay } from "../lib/format";
 import { budget } from "../lib/budget";
 import type { DayView, FoodRow, Kind, Targets, WeightRow } from "../lib/types";
@@ -20,62 +21,6 @@ type RecordAction = {
   record: FoodRow | WeightRow;
   title: string;
 };
-
-/**
- * Concentric progress rings in the manner of Apple's Activity rings. Each ring
- * is one day's logged amount against its daily target. Past 100% the ring
- * keeps going for a second lap, so going over reads as more ring, not a
- * different chart.
- */
-function Rings({
-  rings,
-}: {
-  rings: { key: string; ratio: number | null }[];
-}) {
-  const size = 132;
-  const stroke = 14;
-  const gap = 3;
-  return (
-    <svg
-      className="rings"
-      viewBox={`0 0 ${size} ${size}`}
-      width={size}
-      height={size}
-      aria-hidden
-    >
-      {rings.map(({ key, ratio }, index) => {
-        const r = size / 2 - stroke / 2 - index * (stroke + gap);
-        const first = Math.min(ratio ?? 0, 1) * 100;
-        const lap = Math.min(Math.max((ratio ?? 0) - 1, 0), 1) * 100;
-        return (
-          <g key={key} className={`ring ${key}`}>
-            <circle className="ring-track" r={r} cx={size / 2} cy={size / 2} />
-            {first > 0 && (
-              <circle
-                className="ring-value"
-                r={r}
-                cx={size / 2}
-                cy={size / 2}
-                pathLength={100}
-                strokeDasharray={`${first} 100`}
-              />
-            )}
-            {lap > 0 && (
-              <circle
-                className="ring-value ring-lap"
-                r={r}
-                cx={size / 2}
-                cy={size / 2}
-                pathLength={100}
-                strokeDasharray={`${lap} 100`}
-              />
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
 
 function Nutrition({
   view,
@@ -111,13 +56,20 @@ function Nutrition({
           {view.food.length} {view.food.length === 1 ? "entry" : "entries"}
         </span>
       </header>
-      <div className="rings-body">
-        <Rings
-          rings={[
-            { key: "energy", ratio: kcalRatio },
-            { key: "protein", ratio: proteinRatio },
-          ]}
-        />
+      <AppleActivityCard
+        title={null}
+        compact
+        ringSize={132}
+        strokeWidth={14}
+        activities={[
+          { label: "Energy", value: kcalRatio === null ? null : kcalRatio * 100,
+            color: "var(--energy)", endColor: "#ff6b8b", size: 132,
+            current: totals.kcal, target: burnedKcal, unit: "kcal burned" },
+          { label: "Protein", value: proteinRatio === null ? null : proteinRatio * 100,
+            color: "var(--protein)", endColor: "#9ee7ff", size: 98,
+            current: totals.protein, target: proteinTarget, unit: "g" },
+        ]}
+      >
         <dl className="ring-legend">
           <div
             className={
@@ -156,7 +108,7 @@ function Nutrition({
             )}
           </div>
         </dl>
-      </div>
+      </AppleActivityCard>
       <div className="macro-split">
         <div
           className="macro-bar"

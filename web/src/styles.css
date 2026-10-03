@@ -1,3 +1,34 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* shadcn utilities use the dashboard's existing dark palette. */
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--text);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--surface-2);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--surface-3);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--text-2);
+  --color-accent: var(--surface-3);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--bad);
+  --color-border: var(--hair);
+  --color-input: var(--hair-2);
+  --color-ring: var(--accent);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
 /*
  * One dark dashboard. The chrome is monochrome in the Vercel/Linear manner:
  * near-black canvas, hairline borders, white primary actions. The shapes and
@@ -703,36 +734,8 @@ kbd {
   padding: 14px 18px 6px;
 }
 .rings {
-  display: block;
-}
-.ring circle {
-  fill: none;
-  stroke-width: 14;
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  transform: rotate(-90deg);
-}
-.ring-value {
-  stroke-linecap: round;
-  transition: stroke-dasharray 900ms var(--spring);
-}
-@starting-style {
-  .ring-value {
-    stroke-dasharray: 0 100;
-  }
-}
-.ring.energy circle {
-  stroke: var(--energy);
-}
-.ring.protein circle {
-  stroke: var(--protein);
-}
-.ring-track {
-  opacity: 0.2;
-}
-/* The second lap casts a shadow on the first, as Apple's rings do. */
-.ring-lap {
-  filter: drop-shadow(0 0 2.5px rgb(0 0 0 / 0.75));
+  width: var(--activity-ring-size);
+  aspect-ratio: 1;
 }
 .ring-legend {
   display: grid;
