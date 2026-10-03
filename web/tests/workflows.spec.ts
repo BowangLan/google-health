@@ -58,7 +58,7 @@ test("date browsing is local and changes the dashboard only after choosing a dat
   await expect(page).toHaveURL(/date=2026-09-24/);
   await expect(page.locator(".day-title time[datetime='" + PAST + "']")).toBeVisible();
   await expect(
-    page.getByText(/New food and weight entries will be logged to Thursday, September 24, 2026/),
+    page.getByText(/New weight entries will be logged to Thursday, September 24, 2026/),
   ).toBeVisible();
   await page.reload();
   await expect(page.locator(".day-title time[datetime='" + PAST + "']")).toBeVisible();
@@ -66,16 +66,33 @@ test("date browsing is local and changes the dashboard only after choosing a dat
   await expect(page.locator(".day-title time[datetime='" + TODAY + "']")).toBeVisible();
 });
 
-test("food, reused food and weight all go to the visibly selected historical date", async ({
+test("food and reused food use editable dates and times; weight uses the selected day", async ({
   page,
 }) => {
   const state = await mockHealth(page);
+  await page.clock.setFixedTime(new Date("2026-09-26T01:45:00Z"));
   await page.goto("/#/?date=" + PAST);
   await page.getByRole("button", { name: "Log food", exact: true }).click();
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
+  await expect(page.getByLabel(/^Time/)).toHaveValue("18:45");
+  await page.getByLabel("Date", { exact: true }).fill(PAST);
+  await page.getByLabel(/^Time/).fill("09:15");
   await page.getByLabel("What did you eat?").fill("Test dinner");
   await page
     .getByRole("button", { name: "New food “Test dinner”", exact: true })
     .click();
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
+  await expect(page.getByLabel(/^Time/)).toHaveValue("09:15");
+  await page.getByRole("button", { name: "Back to food search", exact: true }).click();
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
+  await expect(page.getByLabel(/^Time/)).toHaveValue("09:15");
+  await page.getByLabel("What did you eat?").fill("Rice bowl");
+  await page.getByRole("button", { name: /^Rice bowl 600/ }).click();
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
+  await expect(page.getByLabel(/^Time/)).toHaveValue("09:15");
+  await page.getByRole("button", { name: "Back to food search", exact: true }).click();
+  await page.getByLabel("What did you eat?").fill("Test dinner");
+  await page.getByRole("button", { name: "New food “Test dinner”", exact: true }).click();
   for (const [field, value] of [
     ["Calories", "400"],
     ["Protein", "25"],
@@ -83,11 +100,6 @@ test("food, reused food and weight all go to the visibly selected historical dat
     ["Fat", "15"],
   ])
     await page.getByLabel(field, { exact: true }).fill(value);
-  await expect(
-    page
-      .getByRole("dialog")
-      .getByText(/Logging for Thursday, September 24, 2026/),
-  ).toBeVisible();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Log food", exact: true })
@@ -95,6 +107,7 @@ test("food, reused food and weight all go to the visibly selected historical dat
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(state.writes.at(-1)?.body.values).toMatchObject({
     date: PAST,
+    at: "09:15",
     name: "Test dinner",
     protein: "25",
     carbs: "40",
@@ -110,6 +123,9 @@ test("food, reused food and weight all go to the visibly selected historical dat
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
     "Rice bowl",
   );
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
+  await page.getByLabel("Date", { exact: true }).fill(PAST);
+  await page.getByLabel(/^Time/).fill("18:30");
   await page.getByLabel("Amount", { exact: true }).fill("2");
   await expect(page.getByLabel("Calories", { exact: true })).toHaveValue(
     "1200",
@@ -121,7 +137,7 @@ test("food, reused food and weight all go to the visibly selected historical dat
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(state.writes.at(-1)?.body).toMatchObject({
     command: "add",
-    values: { date: PAST, amount: "2", kcal: "1200", protein: "70" },
+    values: { date: PAST, at: "18:30", amount: "2", kcal: "1200", protein: "70" },
   });
   await page
     .locator(".log-actions")
@@ -137,6 +153,32 @@ test("food, reused food and weight all go to the visibly selected historical dat
     collection: "weight",
     command: "add",
     values: { date: PAST, value: "185", unit: "lb" },
+  });
+});
+
+test.describe("food defaults in another browser timezone", () => {
+  test.use({ timezoneId: "Asia/Tokyo" });
+
+  test("reuse defaults to today and Pacific time, validates the date, and shows the saved day", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-09-26T01:45:00Z"));
+    const state = await mockHealth(page);
+    await page.goto("/#/?date=" + PAST);
+    await page.getByRole("button", { name: "Reuse Rice bowl", exact: true }).click();
+    await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
+    await expect(page.getByLabel(/^Time/)).toHaveValue("18:45");
+    await page.getByLabel("Date", { exact: true }).fill("");
+    await page.getByRole("dialog").getByRole("button", { name: "Log food", exact: true }).click();
+    expect(state.writes).toHaveLength(0);
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByLabel("Date", { exact: true }).fill(TODAY);
+    await page.getByRole("dialog").getByRole("button", { name: "Log food", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(state.writes.at(-1)?.body).toMatchObject({
+      command: "add",
+      values: { date: TODAY, at: "18:45", name: "Rice bowl" },
+    });
+    await expect(page.locator(".day-title time[datetime='" + TODAY + "']")).toBeVisible();
+    await expect(page.locator(".island")).toContainText("Friday, September 25, 2026 · 18:45");
   });
 });
 
@@ -160,7 +202,7 @@ test("clicking a chart selects that day for the whole dashboard; range survives 
   const picked = new URL(page.url()).hash.match(/date=([\d-]+)/)![1]!;
   await expect(page.locator(".day-title time[datetime='" + picked + "']")).toBeVisible();
   await expect(
-    page.getByText(/New food and weight entries will be logged to/),
+    page.getByText(/New weight entries will be logged to/),
   ).toBeVisible();
   await page.reload();
   await expect(page.locator(".day-title time[datetime='" + picked + "']")).toBeVisible();
@@ -180,7 +222,7 @@ test("day shortcuts work, modal focus is contained, and no numeric key logs food
   await page.keyboard.press("1");
   expect(state.writes).toHaveLength(0);
   await page.keyboard.press("f");
-  await expect(page.getByLabel("What did you eat?")).toBeFocused();
+  await expect(page.getByLabel("Date", { exact: true })).toBeFocused();
   for (let i = 0; i < 8; i++) await page.keyboard.press("Tab");
   expect(
     await page.evaluate(() =>
@@ -330,6 +372,26 @@ test("dark-only styling fits every width from desktop to a small phone", async (
       .getByRole("dialog")
       .evaluate((el) => el.scrollWidth > el.clientWidth + 1),
   ).toBe(false);
+  for (const width of [1440, 390, 320]) {
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole("button", { name: "Log food", exact: true }).click();
+    const date = await page.getByLabel("Date", { exact: true }).boundingBox();
+    const time = await page.getByLabel("Time (Pacific)", { exact: true }).boundingBox();
+    if (width >= 520) {
+      expect(Math.abs(date!.y - time!.y), "Date and time alignment at " + width).toBeLessThan(1);
+    } else {
+      expect(Math.abs(date!.x - time!.x), "Date and time alignment at " + width).toBeLessThan(1);
+      expect(time!.y, "Time follows date at " + width).toBeGreaterThan(date!.y + date!.height);
+      expect(date!.width, "Room for the full date at " + width).toBeGreaterThan(200);
+      expect(time!.width, "Room for the full time at " + width).toBeGreaterThan(200);
+    }
+    expect(Math.abs(date!.height - time!.height), "Date and time height at " + width).toBeLessThan(1);
+    const search = await page.getByLabel("What did you eat?").boundingBox();
+    expect(search!.y - (time!.y + time!.height), "Gap before food search at " + width).toBeLessThan(45);
+    expect(await page.getByRole("dialog").evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false);
+    await page.getByRole("dialog").screenshot({ path: test.info().outputPath("food-composer-" + width + ".png") });
+  }
 });
 
 test("the energy ring measures against calories burned and the budget uses the deficit goal", async ({

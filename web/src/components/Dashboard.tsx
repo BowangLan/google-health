@@ -153,7 +153,8 @@ export function Dashboard({
       </header>
       {day !== today && (
         <p className="date-context">
-          New food and weight entries will be logged to {fullDate}.
+          New weight entries will be logged to {fullDate}. Food defaults to today;
+          choose its date in the food form.
         </p>
       )}
       <div className="dashboard-grid">
@@ -220,14 +221,22 @@ export function Dashboard({
         >
           {entry.kind === "food" ? (
             <Composer
-              day={day}
-              isToday={day === today}
+              today={today}
               source={entry.source}
               run={run}
               onClose={() => setEntry(null)}
-              onLogged={(name) => {
+              onLogged={(name, loggedDay, at) => {
                 setEntry(null);
-                void onChanged("Logged " + name + " · " + fullDate);
+                go(loggedDay);
+                const loggedDate = parseDay(loggedDay).toLocaleDateString([], {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                });
+                void onChanged(
+                  "Logged " + name + " · " + loggedDate + (at ? " · " + at : ""),
+                );
               }}
             />
           ) : (

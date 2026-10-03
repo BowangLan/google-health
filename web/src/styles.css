@@ -1589,6 +1589,24 @@ kbd {
 .row3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.composer .composer-datetime {
+  padding-bottom: 0;
+}
+.composer-datetime .row2 {
+  align-items: start;
+}
+.composer-datetime input {
+  height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+.composer-datetime + .fields {
+  padding-top: 16px;
+}
+@media (max-width: 519px) {
+  .composer-datetime .row2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 input,
 select,
 textarea {

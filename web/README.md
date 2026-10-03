@@ -30,8 +30,11 @@ and the food log by meal. The right column shows the range: four summary
 figures and the weight, calories and protein charts. Hovering a chart previews
 a day's readings. Clicking a chart selects that day for the whole dashboard.
 The arrows, the calendar dialog and the keyboard change the same day.
-Browsing a calendar month changes nothing until a date is chosen. Food and
-weight forms log to the selected day and repeat that date. Reuse opens an
+Browsing a calendar month changes nothing until a date is chosen. The weight
+form logs to the selected day. Date and time are the first fields in the food
+composer, visible before searching and preserved while choosing foods. They
+default to today and the current Pacific time, including when reusing food
+or browsing an older day. Saving food selects its logged date. Reuse opens an
 editable form before saving; it never logs on a single click. New food
 defaults to Anytime and requires calories and all three macros.
 
