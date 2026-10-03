@@ -201,7 +201,7 @@ pnpm --dir web build
 ```
 
 Open the printed URL (default: `http://127.0.0.1:8787`). New entries sync
-immediately. The app pulls from Google Health when it opens and whenever the
+immediately. The app pulls from Google Health whenever the
 window regains focus, so records logged elsewhere appear on their own; edits
 and deletions wait in the Google Health panel until you push them. See the
 [web app guide](web/README.md) for workflows and UI development.

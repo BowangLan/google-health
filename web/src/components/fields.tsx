@@ -29,6 +29,7 @@ export function TextField({
   disabled,
   scaled,
   autoFocus,
+  required,
 }: {
   label: string;
   value: string;
@@ -39,6 +40,7 @@ export function TextField({
   disabled?: boolean;
   scaled?: boolean;
   autoFocus?: boolean;
+  required?: boolean;
 }) {
   return (
     <Field label={label} hint={hint}>
@@ -49,6 +51,7 @@ export function TextField({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
+        required={required}
         className={scaled ? "scaled" : undefined}
         onChange={(event) => onChange(event.target.value)}
       />

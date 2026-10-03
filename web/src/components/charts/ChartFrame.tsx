@@ -60,7 +60,7 @@ export function ChartFrame({
         role="img"
         aria-label={
           title +
-          " over the selected range. Use Inspect a day to choose a date."
+          " over the selected range. Click a day to select it, or use the date controls."
         }
         preserveAspectRatio="none"
         onPointerMove={(event) => {

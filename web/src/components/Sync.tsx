@@ -276,56 +276,17 @@ export function describeSync({
     tone: "quiet",
     label: overview ? "Not checked yet" : "…",
     brief: "",
-    detail: "The first sync runs when the app opens.",
+    detail: "Use Sync now to check Google Health.",
   };
 }
 
-function useNow(interval = 30_000) {
+export function useNow(interval = 30_000) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), interval);
     return () => window.clearInterval(timer);
   }, [interval]);
   return now;
-}
-
-/* ---------- sidebar ---------- */
-
-export function SyncStatus({
-  overview,
-  last,
-  failure,
-  running,
-  expanded,
-  onClick,
-}: {
-  overview: Overview | null;
-  last: SyncRun | null;
-  failure: SyncFailure | null;
-  running: SyncTrigger | null;
-  expanded: boolean;
-  onClick: () => void;
-}) {
-  const now = useNow();
-  const attention = attentionItems(overview, last).length;
-  const summary = describeSync({ overview, last, failure, running, attention, now });
-  const line = summary.brief ? `${summary.label} · ${summary.brief}` : summary.label;
-  return (
-    <button
-      className={"sync-status " + summary.tone}
-      type="button"
-      onClick={onClick}
-      aria-expanded={expanded}
-      aria-haspopup="dialog"
-      aria-label={"Google Health sync, " + line}
-    >
-      <IconSync aria-hidden className={running ? "spin" : undefined} />
-      <span className="sync-status-text" aria-hidden>
-        <strong>Google Health</strong>
-        <span className="sync-status-line">{line}</span>
-      </span>
-    </button>
-  );
 }
 
 /* ---------- panel ---------- */

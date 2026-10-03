@@ -3,6 +3,53 @@
 React + TypeScript on Vite. The Python server in `healthsync/web.py` reads the
 local records and runs `./hsync` for commands that reach Google Health.
 
+## UI component setup
+
+TypeScript was already configured. Tailwind CSS 4 is installed through
+`@tailwindcss/vite`; `src/styles.css` imports its theme and utilities without
+Preflight so the dashboard keeps its existing base styles. `components.json`
+provides the shadcn CLI configuration, and both TypeScript and Vite resolve
+`@/` to `src/`. The `cn` helper in `src/lib/utils.ts` combines `clsx` and
+`tailwind-merge`.
+
+Application components live in `src/components`. Reusable UI components belong
+in `src/components/ui`, the `/components/ui` path relative to the source root.
+This folder keeps reusable primitives separate from dashboard-specific code
+and gives the shadcn CLI and copied components a consistent import location.
+Global styles remain in `src/styles.css`.
+
+The nutrition tile uses `src/components/ui/apple-activity-ring.tsx`, adapted
+from the MIT-licensed Kokonut UI component supplied for this app. Its
+`activities` prop accepts label, percentage, color, size, current, target, and
+unit; optional `endColor` controls the gradient. A null percentage represents
+an unavailable target. Energy uses eaten/burned calories and protein uses the
+configured daily goal. Both keep animating through multiple laps, with the
+overflow painted over the completed ring. `compact`, `ringSize`, `strokeWidth`,
+and custom legend children fit it into the existing responsive nutrition tile.
+It uses Framer Motion hooks with no context provider, images, or icons required.
+Reduced motion and keyboard input show progress immediately.
+
+`src/components/ui/demo.tsx` exports the supplied standalone demo with the
+original Move, Exercise, and Stand data. Import it into a page to display the
+full card. The main dashboard supplies live nutrition data instead.
+
+For a fresh Vite project, the equivalent setup is:
+
+```sh
+pnpm create vite health-web --template react-ts
+cd health-web
+pnpm install
+pnpm add -D tailwindcss @tailwindcss/vite
+# Configure the Vite plugin, CSS imports, and @/ alias as in this repo.
+pnpm dlx shadcn@latest init
+pnpm add framer-motion clsx tailwind-merge
+```
+
+This repository already includes that configuration; run `pnpm install` to
+restore its dependencies. See the official [Tailwind Vite setup](https://tailwindcss.com/docs/installation/using-vite),
+[Preflight import options](https://tailwindcss.com/docs/preflight), and
+[shadcn Vite setup](https://ui.shadcn.com/docs/installation/vite).
+
 ## Running
 
 From `web/`:
@@ -18,39 +65,53 @@ Vite proxies `/api` to port 8787. `pnpm typecheck` checks TypeScript.
 
 ## Workflows and state
 
-Journal is the default destination and opens today. Its date bar owns date
-navigation and the calendar dialog. Browsing a calendar month does not change
-the journal until a date is chosen. Meals, daily totals, weigh-ins, and logging
-actions all belong to the displayed day. Food and weight forms repeat that date.
-Reuse opens an editable form before saving; it never logs on a single click.
-New food defaults to Anytime and requires calories and all three macros.
+The app is one dashboard. It has one selected day, which defaults to today, and
+one trend range (30, 90, 180 or 365 days ending today). Both live in the URL
+hash as `#/?date=YYYY-MM-DD&days=N`, so reloads, direct links and browser Back
+restore them. Older `#/journal?date=` and `#/trends?days=&day=` links still
+resolve.
 
-Trends owns its time range and inspected date. Hover previews readings, clicking
-pins a day, and an explicit link opens that day's Journal. It contains no second
-journal or logging form. Range summaries are independent of the inspected day.
+The left column shows the selected day: energy and protein rings against the
+daily targets, the macro split, weigh-ins, calories burned from Google Health,
+and the food log by meal. The right column shows the range: four summary
+figures and the weight, calories and protein charts. Hovering a chart previews
+a day's readings. Clicking a chart selects that day for the whole dashboard.
+The arrows, the calendar dialog and the keyboard change the same day.
+Browsing a calendar month changes nothing until a date is chosen. The weight
+form logs to the selected day. Date and time are the first fields in the food
+composer, visible before searching and preserved while choosing foods. They
+default to today and the current Pacific time, including when reusing food
+or browsing an older day. Saving food selects its logged date. Reuse opens an
+editable form before saving; it never logs on a single click. New food
+defaults to Anytime and requires calories and all three macros.
 
-The sidebar contains only Journal, Trends, and global Activity, Settings,
-Shortcuts, and the Google Health status. Page-specific date controls and
-keyboard shortcuts stay inside their page. Journal and Trends encode their
-state separately in the URL hash, so reloads, direct links, and browser Back
-restore the right context.
+The top bar holds the brand, the Dynamic Island, and Activity, Settings and
+Shortcuts. The island is a black capsule modelled on the iPhone's: at rest it
+shows Google Health sync status, while a command runs it shows a waveform, and
+notices grow it into a card for a few seconds. Clicking it opens the sync
+sheet, which grows out of the same spot.
 
-Sync runs by itself in one direction only. When the app opens, and whenever
-the window regains focus after at least 45 seconds, it runs
+Sync runs by itself in one direction only. When the window regains focus,
+and at least 45 seconds have passed since the last sync, it runs
 `hsync sync --all --pull`: a comparison with Google Health, then a pull that
-keeps local edits and deletions. The sidebar shows the outcome and when it
-last ran, and the journal reloads only when records actually changed. Push
+keeps local edits and deletions. Loading or reloading the app does not sync.
+The island shows the outcome and when it
+last ran, and the dashboard reloads only when records actually changed. Push
 never happens on its own. The Google Health panel lists every local change;
 its push button pulls first and then sends them, and pending deletions reach
 Google Health only with the confirmation box ticked. Conflicts, recovery, and
 unreadable files appear under Needs attention with the fields that differ.
 The panel never passes `--force`; the text says how to resolve from a terminal.
 
-The interface is dark only, with neutral surfaces, white primary actions, and
-no green colors. Dialogs contain focus and restore it when closed. Pointer
-transitions are brief; keyboard use and reduced-motion preferences suppress
-movement. On narrow screens the global navigation becomes a top bar, while
-page controls remain with their content.
+The interface is dark only. Chrome is monochrome with white primary actions;
+colour is kept for data, using Apple's dark-mode system colours (energy pink,
+protein cyan, carbs orange, fat yellow, weight purple) and no green. Controls
+are capsules, tiles have 22px corners. Motion uses spring curves written as CSS
+`linear()` easing. Dialogs contain focus and restore it when closed. Keyboard
+use and reduced-motion preferences suppress movement; reduced transparency
+makes the top bar solid. Below 520px the island moves to its own row under the
+brand and buttons. The Apple reference images used for the design are
+Apple's copyright, so they are kept out of the repository.
 
 ## Code structure
 
@@ -59,12 +120,15 @@ page controls remain with their content.
 - `src/lib/navigation.ts` and `src/hooks/useRoute.ts` parse and manage routes.
 - `src/hooks/useHealth.ts` holds global metadata, targets, and the local sync
   overview.
-- `src/hooks/useSync.ts` runs one sync at a time, automatically on open and on
-  focus, and keeps the last run. `src/components/Sync.tsx` derives the sidebar
-  status and the panel from the overview plus that last run.
-- `src/hooks/useJournal.ts` fetches the displayed day's records and rejects stale
-  responses after navigation. `Journal.tsx` owns its dialogs and shortcuts.
-- `Trends.tsx` owns series loading, range selection, and chart inspection.
+- `src/hooks/useSync.ts` runs one sync at a time, automatically on
+  focus, and keeps the last run. `src/components/Sync.tsx` derives the status
+  summary and the sync sheet from the overview plus that last run.
+  `Island.tsx` renders that summary and the notices.
+- `src/hooks/useJournal.ts` fetches the selected day's records and rejects stale
+  responses after navigation. `Dashboard.tsx` owns the day header, logging
+  dialogs and shortcuts. `Day.tsx` draws the day's tiles and food log.
+- `Trends.tsx` owns series loading, the range control, and chart hover. Chart
+  clicks are reported to the dashboard, which selects the day.
 - `src/hooks/useActivity.ts` holds the command log shown in the Activity dialog.
 - `src/lib/series.ts` holds the centred seven-day mean, line-break rules, and
   average denominators. `src/lib/scale.ts` aligns dates across the chart stack.
@@ -88,5 +152,5 @@ pnpm test:e2e
 The Playwright suite requires Google Chrome installed locally. It builds and
 serves an isolated production preview on port 42931 and intercepts every API
 request with fixtures. Tests do not read or mutate real health logs. Coverage
-includes page-local state, history and reloads, backdated logging and reuse,
+includes the single dashboard and legacy links, history and reloads, backdated logging and reuse,
 edit/delete flows, failure recovery, keyboard focus, and responsive dark styling.

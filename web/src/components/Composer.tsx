@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/api";
-import { num, parseDay } from "../lib/format";
+import { num } from "../lib/format";
 import type { FoodMatch, FoodRow } from "../lib/types";
 import { MealPicker, TextField } from "./fields";
 import { IconAdd } from "../lib/icons";
@@ -17,7 +17,6 @@ interface Draft {
   sugar: string;
   fiber: string;
   sodium_mg: string;
-  at: string;
   note: string;
 }
 
@@ -33,7 +32,6 @@ const blank = (meal: string, name = ""): Draft => ({
   sugar: "",
   fiber: "",
   sodium_mg: "",
-  at: "",
   note: "",
 });
 
@@ -62,29 +60,36 @@ function fromFood(match: FoodRow): Draft {
 
 /**
  * Searching past foods is the first step of adding one, not a separate place.
- * Choosing a past food logs it with `clone`, which rescales its nutrition and
- * keeps any Google catalog reference; anything typed fresh, or a past food
- * whose numbers were overridden, is logged with `add`.
+ * A past food can use `clone` when today's time is left implicit, retaining
+ * its Google catalog reference. Explicit dates/times, fresh foods, and changed
+ * nutrients use `add` with the displayed values.
  */
 export function Composer({
-  day,
-  isToday,
+  today,
   onClose,
   onLogged,
   run,
   source,
 }: {
   source?: FoodRow;
-  day: string;
-  isToday: boolean;
+  today: string;
   onClose: () => void;
-  onLogged: (name: string) => void;
+  onLogged: (name: string, day: string, at: string) => void;
   run: (
     collection: "food",
     command: string,
     values: Record<string, string | boolean>,
   ) => Promise<{ ok: boolean; text: string }>;
 }) {
+  const [day, setDay] = useState(today);
+  const [at, setAt] = useState(() =>
+    new Date().toLocaleTimeString("en-GB", {
+      timeZone: "America/Los_Angeles",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }),
+  );
   const [keyword, setKeyword] = useState("");
   const [matches, setMatches] = useState<FoodMatch[]>([]);
   const [active, setActive] = useState(0);
@@ -212,17 +217,17 @@ export function Composer({
         sodium_mg: draft.sodium_mg,
         amount: draft.amount,
         unit: draft.unit,
-        at: draft.at,
+        at,
         note: draft.note,
         date: day,
       };
       let cloneIndex: number | null = null;
       if (
         picked &&
-        isToday &&
+        day === today &&
         !overridden() &&
         draft.meal === picked.meal &&
-        !draft.at &&
+        !at &&
         !draft.note
       ) {
         // Clone only if its current source still matches the displayed draft
@@ -261,7 +266,7 @@ export function Composer({
             })
           : await run("food", "add", values);
 
-      if (outcome.ok) onLogged(draft.name);
+      if (outcome.ok) onLogged(draft.name, day, at);
       else
         setProblem(
           outcome.text || "This food could not be logged. Please try again.",
@@ -291,16 +296,26 @@ export function Composer({
   }
 
   return (
-    <div className="composer">
-      <p className="record-date">
-        Logging for{" "}
-        {parseDay(day).toLocaleDateString([], {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-        })}
-      </p>
+    <form className="composer" onSubmit={submit}>
+      <div className="fields composer-datetime">
+        <div className="row2">
+          <TextField
+            label="Date"
+            type="date"
+            value={day}
+            onChange={setDay}
+            disabled={saving}
+            required
+          />
+          <TextField
+            label="Time (Pacific)"
+            type="time"
+            value={at}
+            onChange={setAt}
+            disabled={saving}
+          />
+        </div>
+      </div>
 
       {!draft && (
         <>
@@ -359,7 +374,7 @@ export function Composer({
         </>
       )}
       {draft && (
-        <form className="fields" onSubmit={submit}>
+        <div className="fields">
           <button
             type="button"
             className="back-to-search"
@@ -418,7 +433,7 @@ export function Composer({
             />
           </div>
           <details>
-            <summary>Sugar, fibre, sodium, time, note</summary>
+            <summary>Sugar, fibre, sodium, note</summary>
             <div className="fields">
               <div className="row3">
                 <TextField
@@ -440,12 +455,6 @@ export function Composer({
                   onChange={set("sodium_mg")}
                 />
               </div>
-              <TextField
-                label="Time"
-                type="time"
-                value={draft.at}
-                onChange={set("at")}
-              />
               <TextField
                 label="Private note"
                 value={draft.note}
@@ -472,8 +481,8 @@ export function Composer({
               Cancel
             </button>
           </div>
-        </form>
+        </div>
       )}
-    </div>
+    </form>
   );
 }

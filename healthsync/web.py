@@ -457,6 +457,20 @@ def day_view(date_text=None):
     ]
     weights.sort(key=lambda row: row["time"])
 
+    # The most recent earlier weigh-in day, for the day-to-day change. Like the
+    # charts, it takes that day's first reading: morning weigh-ins compare with
+    # each other, and an evening one is a different measurement.
+    earlier = [
+        weight_row(state, weight_store, path, fm, body, unit)
+        for state, path, fm, body in weight_rows
+        if weight_record.day(fm) < day
+    ]
+    previous = None
+    if earlier:
+        last_day = max(row["day"] for row in earlier)
+        first = min((row for row in earlier if row["day"] == last_day), key=lambda row: row["time"])
+        previous = {"day": first["day"], "time": first["time"], "value": first["value"]}
+
     return {
         "day": day,
         "today": today,
@@ -465,6 +479,7 @@ def day_view(date_text=None):
         "food": food,
         "totals": totals,
         "weights": weights,
+        "previous_weight": previous,
         "burned": burned.load(config).get(day),
         "broken": [f"{store.rel(p)}: {e}" for p, e in broken]
         + [f"{weight_store.rel(p)}: {e}" for p, e in weight_broken],
@@ -645,6 +660,9 @@ def series_view(days=180, unit=None):
             continue
         bucket(day)["readings"].append((str(fm["time"]), float(fm["weight_kg"])))
 
+    # Google's daily calories burned, as last pulled. Today's is a running total.
+    burned_days = burned.load(config)
+
     def shown(kilograms):
         return (
             round(kilograms / POUND_KG, 2) if unit == "lb"
@@ -686,6 +704,11 @@ def series_view(days=180, unit=None):
             ),
             "first_entry": cell["first"] if has_food else None,
             "last_entry": cell["last"] if has_food else None,
+            "burned": (
+                tidy_numbers(round(float(burned_days[day]["kcal"]), 1))
+                if isinstance(burned_days.get(day), dict) and burned_days[day].get("kcal") is not None
+                else None
+            ),
             "weight": shown(first) if first is not None else None,
             "weight_readings": [
                 {"time": time[11:16], "value": shown(value)} for time, value in readings
@@ -750,7 +773,13 @@ def food_search(keyword=""):
 
 
 SETTINGS = ROOT / ".hsync-web.json"
-DEFAULT_TARGETS = {"daily_kcal": None, "daily_protein_g": None, "weight_unit": None}
+DEFAULT_TARGETS = {
+    "daily_kcal": None,
+    "daily_protein_g": None,
+    "weight_unit": None,
+    # kcal a day to stay under calories burned; 0 means aim to match them.
+    "daily_deficit_kcal": 0,
+}
 
 
 def targets(values=None):
@@ -777,6 +806,12 @@ def targets(values=None):
             if not 0 < number <= 100000:
                 raise ValueError(f"{key} is out of range")
             clean[key] = tidy_numbers(number)
+        if "daily_deficit_kcal" in values:
+            raw = values["daily_deficit_kcal"]
+            number = 0.0 if raw in (None, "") else float(raw)
+            if not 0 <= number <= 5000:
+                raise ValueError("daily_deficit_kcal is out of range")
+            clean["daily_deficit_kcal"] = tidy_numbers(number)
         if "weight_unit" in values:
             unit = values["weight_unit"]
             if unit not in (None, "", "kg", "lb"):
@@ -787,7 +822,7 @@ def targets(values=None):
     if not SETTINGS.exists():
         return dict(DEFAULT_TARGETS)
     stored = json.loads(SETTINGS.read_text())
-    return {key: stored.get(key) for key in DEFAULT_TARGETS}
+    return {key: stored.get(key, default) for key, default in DEFAULT_TARGETS.items()}
 
 
 def display_unit(config, requested=None):
