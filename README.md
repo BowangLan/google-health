@@ -18,6 +18,8 @@ bodies hold private notes that stay on your machine.
 - Pull existing records, edit them locally, and review changes before pushing.
 - Detect conflicting edits and recover interrupted sync operations.
 - Keep private notes alongside records, with separate food and weight storage.
+- Read calories burned, steps, distance, hourly heart rate, Fitbit workouts, and run
+  distance from Google Health.
 
 ## Getting started
 
@@ -136,6 +138,55 @@ An earlier date without a time uses noon and records that it is a placeholder in
 the private body. Dates use the timezone's correct seasonal UTC offset.
 Timestamps authored by hand must include an offset; quote them in YAML.
 
+### Activity (read-only)
+
+```sh
+./hsync cal pull               # calories burned, last 7 days
+./hsync steps pull --days 30
+./hsync distance list
+./hsync hr pull                # heart rate, today by hour
+./hsync hr list --days 2
+./hsync workouts pull --days 30
+./hsync run list               # run distance per day, from saved workouts
+```
+
+These commands read data that Google Health computes from your devices; nothing
+is written back. `pull` fetches the last `--days` days and saves them to a JSON
+file in the data directory; `list` shows the saved rows without contacting Google.
+
+| Command | One row per | Values | File |
+| --- | --- | --- | --- |
+| `cal` | Local day | Total kcal burned (basal plus active) | `burned.json` |
+| `steps` | Local day | Step count | `steps.json` |
+| `distance` | Local day | Distance, stored in meters; shown in km and miles | `distance.json` |
+| `hr` | Local clock hour | Average, minimum, and maximum beats per minute | `heart-rate.json` |
+| `workouts` | Workout session | Type, start and end, active time, distance, kcal, average bpm, steps, active zone minutes | `workouts.json` |
+| `run` | Local day with a run | Total distance and number of runs | (from `workouts.json`) |
+
+Only Fitbit data is used. Apple Watch data synced through Apple Health also reaches
+Google Health, often duplicating the same walk or run. Workouts and heart rate
+skip every non-Fitbit record. Steps and distance use Google's daily totals, which
+were checked against the raw records and contain no Apple Watch data.
+
+Heart rate is hourly, not daily: each row is the average, minimum, and maximum of
+every Fitbit reading in that hour, computed locally from the raw samples (about
+36,000 a day, roughly 6 seconds to fetch). Google's own hourly heart-rate totals
+include Apple Watch readings, so they are not used. `hr` defaults to `--days 1`
+(today); the others default to 7 days. Hours keep their UTC offset, so the repeated
+hour when daylight saving time ends stays distinct. Hours with no readings, such as
+when the device was not worn, are absent.
+
+`workouts pull` mirrors its window: new and changed sessions are saved, and saved
+sessions in the window that Google no longer returns are removed. Sessions outside
+the window are kept. Workouts are keyed by Google's ID, and each belongs to the
+local day it started. `run` counts outdoor runs (`RUNNING`) and treadmill sessions
+(`TREADMILL`); `run pull` pulls workouts, then shows run totals.
+
+The current day and hour are still accumulating, so each row records when it was
+fetched; pull again for the latest numbers. Requests are split to fit the API's
+range limits (14 days for calories, 90 for steps and distance, one day of heart rate).
+These commands need the `activity_and_fitness.readonly` scope, which `./auth` requests.
+
 ## Web app
 
 The optional React interface provides a daily journal, food and weight forms,
@@ -203,10 +254,12 @@ saved baseline; it does not contact Google. `sync` separately reports how many
 records match Google Health, differ, are missing remotely, or exist only remotely.
 That comparison describes the state before any selected pull/push actions.
 
-To keep both collections current, `./hwatch` runs `hsync pull --all` every 300
-seconds (5 minutes) until stopped. A leading number sets the interval in seconds; remaining
-arguments go to pull, for example `./hwatch 300 --days 30`. It never pushes, and
-a failed pull is reported and retried on the next interval.
+To keep everything current, `./hwatch` runs `hsync pull --all` every 300 seconds
+(5 minutes) until stopped, then pulls calories burned, steps, distance, and workouts
+for the last 7 days and heart rate for the last 2. A leading number sets the
+interval in seconds; remaining arguments go to the food and weight pull, for
+example `./hwatch 300 --days 30`. It never pushes, and a failed pull is reported
+and retried on the next interval.
 
 ## Configuration
 
@@ -251,6 +304,11 @@ data/
     .hsync-index.json
     .weight-operations.json   # created when needed
     2026-09-24/0800--weight--<id>.md
+  burned.json                 # read-only activity, created by pull
+  steps.json
+  distance.json
+  heart-rate.json
+  workouts.json
 ```
 
 Paths are decorative; fields inside the files determine their identity and date.
@@ -409,6 +467,9 @@ The sync engine is Python; the web app uses React, TypeScript, and Vite.
 | [`healthsync/google_health.py`](healthsync/google_health.py) | OAuth and Google Health API calls |
 | [`healthsync/records/`](healthsync/records/) | Food and weight schemas |
 | [`healthsync/food_commands.py`](healthsync/food_commands.py) | Food logging, cloning, and totals |
+| [`healthsync/burned.py`](healthsync/burned.py) | Read-only daily calories burned |
+| [`healthsync/activity.py`](healthsync/activity.py) | Read-only steps, distance, and hourly heart rate |
+| [`healthsync/workouts.py`](healthsync/workouts.py) | Read-only Fitbit workouts and run distance |
 | [`healthsync/web.py`](healthsync/web.py) | Local web server and API |
 | [`healthsync/sync_report.py`](healthsync/sync_report.py) | Turns `sync` output into the web app's structured report |
 | [`web/`](web/) | React interface and browser tests |

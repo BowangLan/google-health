@@ -7,7 +7,7 @@ import datetime as dt
 import sys
 from zoneinfo import ZoneInfoNotFoundError
 
-from healthsync import burned, food_commands
+from healthsync import activity, burned, food_commands, workouts
 from healthsync import style as S
 from healthsync.common import Clock, number
 from healthsync.config import resolve
@@ -175,6 +175,33 @@ def parser():
     ):
         sp = command(burned_sub, name, common, help=description)
         sp.add_argument("--days", type=positive, default=7)
+    for metric, description in (
+        ("steps", "daily step totals (read-only)"),
+        ("distance", "daily distance totals (read-only)"),
+        ("hr", "hourly heart rate: average, minimum, maximum (read-only)"),
+    ):
+        group = command(sub, metric, common, help=description)
+        metric_sub = group.add_subparsers(dest="cmd", required=True)
+        rows = "hours" if activity.METRICS[metric].hourly else "days"
+        for name, action in (
+            ("pull", f"fetch {rows} from Google Health"),
+            ("list", f"show saved {rows}"),
+        ):
+            sp = command(metric_sub, name, common, help=action)
+            # A day of heart rate is 24 rows, so its window defaults to today.
+            sp.add_argument("--days", type=positive, default=1 if rows == "hours" else 7)
+    for kind, description, rows in (
+        ("workouts", "Fitbit workout sessions (read-only)", "sessions"),
+        ("run", "daily run distance from Fitbit runs and treadmill sessions (read-only)", "days"),
+    ):
+        group = command(sub, kind, common, help=description)
+        kind_sub = group.add_subparsers(dest="cmd", required=True)
+        for name, action in (
+            ("pull", "fetch workouts from Google Health"),
+            ("list", f"show saved {rows}"),
+        ):
+            sp = command(kind_sub, name, common, help=action)
+            sp.add_argument("--days", type=positive, default=7)
     shared_commands(sub, common, aggregate=True)
     return root
 
@@ -253,11 +280,57 @@ def run_burned(args):
     return 0
 
 
+def run_activity(args):
+    cfg = resolve(args, "food")
+    clock = Clock(cfg.timezone)
+    metric = activity.METRICS[args.kind]
+    if args.cmd == "pull":
+        rows = activity.pull(cfg, clock, metric, args.days)
+    else:
+        since = (clock.today() - dt.timedelta(days=args.days - 1)).isoformat()
+        rows = {k: v for k, v in activity.load(cfg, metric).items() if k[:10] >= since}
+    for row, value in sorted(rows.items()):
+        when = row[:16].replace("T", " ")
+        fetched = value["fetched"][:16].replace("T", " ")
+        print(
+            f"  {S.dim(when)}  {S.bold(activity.describe(metric, value))}"
+            f"  {S.dim('fetched ' + fetched)}"
+        )
+    print(f"{S.bold(len(rows))} {'hours' if metric.hourly else 'days'}")
+    return 0
+
+
+def run_workouts(args):
+    cfg = resolve(args, "food")
+    clock = Clock(cfg.timezone)
+    since = (clock.today() - dt.timedelta(days=args.days - 1)).isoformat()
+    counts = None
+    if args.cmd == "pull":
+        _, counts = workouts.pull(cfg, clock, args.days)
+    saved = {k: v for k, v in workouts.load(cfg).items() if v["start"][:10] >= since}
+    if args.kind == "run":
+        rows = workouts.run_days(saved)
+        for day, value in sorted(rows.items()):
+            runs = f"{value['runs']} run" + ("s" if value["runs"] > 1 else "")
+            print(f"  {S.dim(day)}  {S.bold(workouts.distance(value['meters']))}  {S.dim(runs)}")
+        print(f"{S.bold(len(rows))} days with runs")
+    else:
+        for fields in sorted(saved.values(), key=lambda v: v["start"]):
+            when = fields["start"][:16].replace("T", " ")
+            print(f"  {S.dim(when)}  {S.bold(workouts.describe(fields))}")
+        print(f"{S.bold(len(saved))} workouts")
+    if counts:
+        print(S.dim("{} new, {} changed, {} removed".format(*counts)))
+    return 0
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
-    if args.kind == "cal":
+    if args.kind in ("cal", "workouts", "run") or args.kind in activity.METRICS:
         try:
-            return run_burned(args)
+            if args.kind in ("workouts", "run"):
+                return run_workouts(args)
+            return run_burned(args) if args.kind == "cal" else run_activity(args)
         except (ValueError, TypeError, OSError, RemoteError) as exc:
             print(S.red(f"hsync: {exc}"), file=sys.stderr)
             return 1

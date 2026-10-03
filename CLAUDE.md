@@ -44,6 +44,15 @@ Food and weight use separate directories and indexes. Use collection-specific
 commands for logging. Top-level `--all` operations include both collections.
 Markdown bodies are private; weight `remote_notes` is sent to Google Health.
 
+## Read-only activity
+
+Calories burned, steps, distance, heart rate, workouts, and run distance are read
+from Google Health and never pushed. Use
+`./hsync <cal|steps|distance|hr|workouts|run> pull --days N` for current numbers,
+or `list` for what was last saved. Heart rate is one row per local hour (average,
+minimum, and maximum bpm), not per day. Only Fitbit data counts; Apple Watch
+records are skipped. Run distance includes treadmill sessions.
+
 ## Recovery and conflicts
 
 If a create may have succeeded but its ID was not saved, reconcile with the
