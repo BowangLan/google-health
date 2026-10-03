@@ -98,6 +98,8 @@ function series(days: number, targets: Targets): Series {
       unaccounted_kcal: 0,
       first_entry: "12:30",
       last_entry: "12:30",
+      // Some days over the burn, some under, and the oldest week not pulled.
+      burned: i < 7 ? null : 1950 + (i % 3) * 100,
       weight: 190 - i * 0.03,
       weight_readings: [{ time: "08:00", value: 190 - i * 0.03 }],
     })),
@@ -175,6 +177,7 @@ export async function mockHealth(page: Page) {
     targets: {
       daily_kcal: 2000,
       daily_protein_g: 150,
+      daily_deficit_kcal: 0,
       weight_unit: "lb",
     } as Targets,
     overview: cleanOverview(),
@@ -232,6 +235,7 @@ export async function mockHealth(page: Page) {
         state.targets = {
           daily_kcal: Number(body.daily_kcal),
           daily_protein_g: Number(body.daily_protein_g),
+          daily_deficit_kcal: Number(body.daily_deficit_kcal || 0),
           weight_unit: body.weight_unit,
         };
         return route.fulfill({ json: state.targets });
@@ -303,6 +307,7 @@ export async function mockHealth(page: Page) {
                 fiber: 5,
               },
           weights: [],
+          burned: { kcal: 2400, fetched: day + "T20:00:00-07:00" },
           broken: [],
         },
       });

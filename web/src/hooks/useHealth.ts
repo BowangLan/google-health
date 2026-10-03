@@ -10,6 +10,7 @@ export function useHealth() {
   const [targets, setTargets] = useState<Targets>({
     daily_kcal: null,
     daily_protein_g: null,
+    daily_deficit_kcal: 0,
     weight_unit: null,
   });
   const [error, setError] = useState<string | null>(null);

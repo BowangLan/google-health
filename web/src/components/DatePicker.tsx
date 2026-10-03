@@ -7,7 +7,7 @@ import { Calendar } from "./Calendar";
 import { Dialog } from "./Dialog";
 import { IconNext, IconPrev } from "../lib/icons";
 
-/** Browsing months does not change the journal. Only choosing a date does. */
+/** Browsing months does not change the dashboard. Only choosing a date does. */
 export function DatePicker({
   day,
   today,
@@ -43,7 +43,7 @@ export function DatePicker({
   }, [month, attempt]);
   return (
     <Dialog
-      title="Choose a journal date"
+      title="Choose a date"
       onClose={onClose}
       className="date-dialog"
     >

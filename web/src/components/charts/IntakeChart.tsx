@@ -1,15 +1,17 @@
-import { macroEnergy } from "../../lib/series";
+import { macroEnergy, runs } from "../../lib/series";
 import { niceStep, type DayScale } from "../../lib/scale";
 import type { Series } from "../../lib/types";
 import { ChartFrame, EmptyPanel } from "./ChartFrame";
 
-const HEIGHT = 170;
+const HEIGHT = 200;
 const PAD = { top: 12, bottom: 8 };
 
 /**
- * Columns, not a line: calories per day is a counted total with a meaningful
- * zero, and a line would assert a value between the days. Each column is
- * stacked from macro energy, so total and composition read in one mark.
+ * Eaten and burned on one axis. Eaten is a column per day, stacked from macro
+ * energy, so total and composition read in one mark. Burned is a line over
+ * the columns. Wherever a column rises above that day's burn, the excess is
+ * highlighted: that part is the surplus. The calorie goal is a dotted line
+ * for reference only; going over it is not highlighted.
  */
 export function IntakeChart({
   series,
@@ -29,15 +31,17 @@ export function IntakeChart({
   showAxis: boolean;
 }) {
   const logged = series.rows.filter((row) => row.kcal !== null);
-  if (logged.length === 0) {
+  const burnedDays = series.rows.filter((row) => row.burned !== null);
+  if (logged.length === 0 && burnedDays.length === 0) {
     return (
-      <EmptyPanel title="Calories" message="No food logged in this range." />
+      <EmptyPanel title="Calories" message="No food logged or calories burned in this range." />
     );
   }
 
   const target = series.targets.daily_kcal;
   const peak = Math.max(
     ...logged.map((row) => row.kcal as number),
+    ...burnedDays.map((row) => row.burned as number),
     target ?? 0,
   );
   const step = niceStep(peak * 1.1, 4);
@@ -47,6 +51,10 @@ export function IntakeChart({
 
   const width = Math.max(0.5, Math.min(22, scale.band * 0.72));
   const coverage = `${series.coverage.days_logged} of ${series.coverage.days_in_range} days logged`;
+  const burnedRuns = runs(
+    burnedDays.map((row) => ({ day: row.day, value: row.burned as number })),
+    1,
+  );
 
   return (
     <ChartFrame
@@ -59,7 +67,9 @@ export function IntakeChart({
             <span className="carbs">Carbs</span>
             <span className="fat">Fat</span>
             <span className="unaccounted">Other</span>
-            {target !== null && <span className="over">Over target</span>}
+            <span className="burned">Burned</span>
+            <span className="over">Over burned</span>
+            {target !== null && <span className="goal">Goal</span>}
           </span>
         </>
       }
@@ -74,13 +84,34 @@ export function IntakeChart({
       onPick={onPick}
       showAxis={showAxis}
       note={
-        series.coverage.days_logged < series.coverage.days_in_range * 0.9 ? (
-          <>Empty slots are days with no food record, not days of no eating.</>
-        ) : undefined
+        <>
+          {series.coverage.days_logged < series.coverage.days_in_range * 0.9 &&
+            "Empty slots are days with no food record, not days of no eating. "}
+          {series.rows[series.rows.length - 1]?.burned != null &&
+            "Today’s burn is still accumulating."}
+        </>
       }
     >
       {({ y, bottom }) => (
         <>
+          {target !== null && (
+            <>
+              <line
+                className="viz-target"
+                x1={scale.left}
+                x2={scale.width - scale.right}
+                y1={y(target)}
+                y2={y(target)}
+              />
+              <text
+                className="viz-tick"
+                x={scale.width - scale.right + 4}
+                y={y(target) + 3.5}
+              >
+                goal
+              </text>
+            </>
+          )}
           {series.rows.map((row) => {
             const x = scale.x(row.day) - width / 2;
             if (row.kcal === null) {
@@ -136,36 +167,36 @@ export function IntakeChart({
                     />
                   );
                 })}
-                {target !== null && total > target && (
+                {row.burned !== null && total > row.burned && (
                   <rect
                     className="viz-over"
                     x={x}
                     y={y(total)}
                     width={width}
-                    height={Math.max(y(target) - y(total), 1)}
+                    height={Math.max(y(row.burned) - y(total), 1)}
                   />
                 )}
               </g>
             );
           })}
-
-          {target !== null && (
-            <>
-              <line
-                className="viz-target"
-                x1={scale.left}
-                x2={scale.width - scale.right}
-                y1={y(target)}
-                y2={y(target)}
+          {burnedRuns.map((run) =>
+            run.length > 1 ? (
+              <path
+                key={run[0]!.day}
+                className="viz-burned"
+                d={run
+                  .map((p, i) => `${i ? "L" : "M"}${scale.x(p.day).toFixed(1)},${y(p.value).toFixed(1)}`)
+                  .join(" ")}
               />
-              <text
-                className="viz-tick"
-                x={scale.width - scale.right + 4}
-                y={y(target) + 3.5}
-              >
-                target
-              </text>
-            </>
+            ) : (
+              <circle
+                key={run[0]!.day}
+                className="viz-burned-point"
+                r={2.5}
+                cx={scale.x(run[0]!.day)}
+                cy={y(run[0]!.value)}
+              />
+            ),
           )}
         </>
       )}

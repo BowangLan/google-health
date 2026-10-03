@@ -17,6 +17,7 @@ export function SettingsPopover({
   const [protein, setProtein] = useState(
     targets.daily_protein_g === null ? "" : String(targets.daily_protein_g),
   );
+  const [deficit, setDeficit] = useState(String(targets.daily_deficit_kcal ?? 0));
   const [unit, setUnit] = useState<"kg" | "lb" | "">(targets.weight_unit ?? "");
   const [problem, setProblem] = useState<string | null>(null);
   const first = overview?.collections.find((collection) => !collection.error);
@@ -28,6 +29,7 @@ export function SettingsPopover({
         await api.putTargets({
           daily_kcal: kcal.trim(),
           daily_protein_g: protein.trim(),
+          daily_deficit_kcal: deficit.trim(),
           weight_unit: unit || null,
         }),
       );
@@ -58,7 +60,7 @@ export function SettingsPopover({
             value={kcal}
             onChange={(event) => setKcal(event.target.value)}
           />
-          <span className="hint">drives the bars; leave blank for none</span>
+          <span className="hint">The dotted goal line on the calorie chart. Leave blank for none.</span>
         </label>
         <label className="field">
           <span>Daily protein target (g)</span>
@@ -68,6 +70,20 @@ export function SettingsPopover({
             value={protein}
             onChange={(event) => setProtein(event.target.value)}
           />
+        </label>
+        <label className="field">
+          <span>Daily deficit goal (kcal)</span>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            value={deficit}
+            onChange={(event) => setDeficit(event.target.value)}
+          />
+          <span className="hint">
+            How far under calories burned to stay. Today’s budget is burned
+            minus eaten minus this. 0 aims to match what you burn.
+          </span>
         </label>
         <div className="field">
           <span>Show weight in</span>

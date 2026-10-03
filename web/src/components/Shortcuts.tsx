@@ -1,26 +1,24 @@
 import { Dialog } from "./Dialog";
 
 const GLOBAL = [
-  ["J", "Open today’s journal"],
-  ["G", "Open trends"],
   ["P", "Google Health sync"],
   ["?", "Keyboard shortcuts"],
   ["Esc", "Close dialog"],
 ];
-const JOURNAL = [
+const DAY = [
   ["← / →", "Previous / next day"],
   ["↑ / ↓", "Previous / next week"],
   ["T", "Return to today"],
   ["D", "Choose a date"],
-  ["F or /", "Log food to the displayed day"],
-  ["W", "Log weight to the displayed day"],
+  ["F or /", "Log food to the selected day"],
+  ["W", "Log weight to the selected day"],
 ];
 
 export function ShortcutSheet({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="Keyboard shortcuts" onClose={onClose}>
       <div className="shortcut-content">
-        <h3>Anywhere</h3>
+        <h3>Global</h3>
         <dl>
           {GLOBAL.map(([key, text]) => (
             <div key={key} style={{ display: "contents" }}>
@@ -29,10 +27,9 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </dl>
-        <h3>In Journal</h3>
-        <p>These act only on the day shown in Journal.</p>
+        <h3>Selected day</h3>
         <dl>
-          {JOURNAL.map(([key, text]) => (
+          {DAY.map(([key, text]) => (
             <div key={key} style={{ display: "contents" }}>
               <dt>{key}</dt>
               <dd>{text}</dd>

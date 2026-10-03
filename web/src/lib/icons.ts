@@ -23,13 +23,13 @@ export { ArrowCounterClockwiseIcon as IconAgain } from "@phosphor-icons/react/Ar
 // meaning; no 14px glyph can.
 export { DatabaseIcon as IconCatalogue } from "@phosphor-icons/react/Database";
 export { CalendarBlankIcon as IconLedger } from "@phosphor-icons/react/CalendarBlank";
-export { ChartLineIcon as IconTrends } from "@phosphor-icons/react/ChartLine";
 export { ScalesIcon as IconWeight } from "@phosphor-icons/react/Scales";
 export { ForkKnifeIcon as IconFood } from "@phosphor-icons/react/ForkKnife";
 export { WarningIcon as IconWarning } from "@phosphor-icons/react/Warning";
 export { ArrowsClockwiseIcon as IconSync } from "@phosphor-icons/react/ArrowsClockwise";
 
 export { HeartbeatIcon as IconPulse } from "@phosphor-icons/react/Heartbeat";
+export { FlameIcon as IconBurned } from "@phosphor-icons/react/Flame";
 export { KeyboardIcon as IconKeyboard } from "@phosphor-icons/react/Keyboard";
 
 export { ClockCounterClockwiseIcon as IconActivity } from "@phosphor-icons/react/ClockCounterClockwise";

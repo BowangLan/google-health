@@ -1,25 +1,26 @@
 import { useEffect, useState } from "react";
 import { useJournal } from "../hooks/useJournal";
 import { parseDay, relativeDay, shiftDay } from "../lib/format";
-import { journalHref } from "../lib/navigation";
+import { dashboardHref } from "../lib/navigation";
 import type { FoodRow, RunCommand, Targets } from "../lib/types";
-import {
-  IconAdd,
-  IconLedger,
-  IconNext,
-  IconPrev,
-  IconWeight,
-} from "../lib/icons";
+import { IconAdd, IconLedger, IconNext, IconPrev, IconWeight } from "../lib/icons";
 import { DatePicker } from "./DatePicker";
-import { JournalEntries } from "./JournalEntries";
+import { Day } from "./Day";
 import { Dialog } from "./Dialog";
 import { Composer } from "./Composer";
 import { WeightComposer } from "./WeightComposer";
+import { Trends } from "./Trends";
 
 type Entry = { kind: "food"; source?: FoodRow } | { kind: "weight" } | null;
 
-export function Journal({
+/**
+ * One page. The selected day drives the left column (totals, weight, meals)
+ * and the pinned column in every chart on the right. Picking a day anywhere,
+ * from the arrows, the calendar or a chart, changes both.
+ */
+export function Dashboard({
   day,
+  days,
   today,
   unit,
   targets,
@@ -30,11 +31,12 @@ export function Journal({
   onSync,
 }: {
   day: string;
+  days: number;
   today: string;
   unit: "kg" | "lb";
   targets: Targets;
   revision: number;
-  navigate: (href: string) => void;
+  navigate: (href: string, replace?: boolean) => void;
   run: RunCommand;
   onChanged: (message: string) => Promise<void>;
   onSync: () => void;
@@ -42,9 +44,11 @@ export function Journal({
   const journal = useJournal(day, revision);
   const [calendar, setCalendar] = useState(false);
   const [entry, setEntry] = useState<Entry>(null);
+  const go = (date: string | null, replace = false) =>
+    navigate(dashboardHref(date === today ? null : date, days), replace);
   const choose = (date: string) => {
     setCalendar(false);
-    navigate(journalHref(date));
+    go(date);
   };
   const fullDate = parseDay(day).toLocaleDateString([], {
     weekday: "long",
@@ -53,8 +57,6 @@ export function Journal({
     year: "numeric",
   });
 
-  // These shortcuts live with their page. They cannot move a hidden journal
-  // while someone is inspecting Trends or editing a record in a dialog.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -68,12 +70,14 @@ export function Journal({
         event.shiftKey
       )
         return;
+      const step = (by: number) => () =>
+        navigate(dashboardHref(shiftDay(day, by), days));
       const actions: Record<string, () => void> = {
-        ArrowLeft: () => navigate(journalHref(shiftDay(day, -1))),
-        ArrowRight: () => navigate(journalHref(shiftDay(day, 1))),
-        ArrowUp: () => navigate(journalHref(shiftDay(day, -7))),
-        ArrowDown: () => navigate(journalHref(shiftDay(day, 7))),
-        t: () => navigate(journalHref()),
+        ArrowLeft: step(-1),
+        ArrowRight: step(1),
+        ArrowUp: step(-7),
+        ArrowDown: step(7),
+        t: () => navigate(dashboardHref(null, days)),
         d: () => setCalendar(true),
         f: () => setEntry({ kind: "food" }),
         "/": () => setEntry({ kind: "food" }),
@@ -87,29 +91,37 @@ export function Journal({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [day, navigate]);
+  }, [day, days, navigate]);
 
   return (
-    <div className="journal-page">
-      <header className="page-header">
-        <div>
-          <div className="eyebrow">Food & weight</div>
-          <h1>Journal</h1>
-          <p>Log meals, record weight, and review a day.</p>
+    <div className="dashboard">
+      <header className="day-header" aria-label="Selected day and logging">
+        <div className="day-title">
+          <h1>{relativeDay(day, today)}</h1>
+          <time dateTime={day}>{fullDate}</time>
         </div>
-      </header>
-      <section
-        className="journal-datebar"
-        aria-label="Journal date and logging"
-      >
-        <div className="journal-date">
-          <div className="day-arrows">
+        <div className="day-controls">
+          <div className="day-stepper">
             <button
               className="step"
               aria-label="Previous day"
               onClick={() => choose(shiftDay(day, -1))}
             >
               <IconPrev aria-hidden />
+            </button>
+            <button
+              className="date-trigger"
+              aria-label={"Choose date, " + fullDate}
+              aria-haspopup="dialog"
+              onClick={() => setCalendar(true)}
+            >
+              <IconLedger size={15} aria-hidden />
+              <span aria-hidden>
+                {parseDay(day).toLocaleDateString([], {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
             </button>
             <button
               className="step"
@@ -119,78 +131,73 @@ export function Journal({
               <IconNext aria-hidden />
             </button>
           </div>
-          <button
-            className="date-trigger"
-            aria-label={"Choose journal date, " + fullDate}
-            aria-haspopup="dialog"
-            onClick={() => setCalendar(true)}
-          >
-            <IconLedger size={18} aria-hidden />
-            <span>
-              <strong>{relativeDay(day, today)}</strong>
-              <time dateTime={day}>{fullDate}</time>
-            </span>
-          </button>
           {day !== today && (
-            <a className="today-action" href={journalHref()}>
+            <a className="today-action" href={dashboardHref(null, days)}>
               Today
             </a>
           )}
+          <div className="log-actions">
+            <button
+              className="secondary"
+              onClick={() => setEntry({ kind: "weight" })}
+            >
+              <IconWeight size={15} aria-hidden />
+              Log weight
+            </button>
+            <button className="primary" onClick={() => setEntry({ kind: "food" })}>
+              <IconAdd size={15} aria-hidden />
+              Log food<kbd aria-hidden>F</kbd>
+            </button>
+          </div>
         </div>
-        <div className="journal-actions">
-          <button
-            className="secondary"
-            onClick={() => setEntry({ kind: "weight" })}
-          >
-            <IconWeight size={16} aria-hidden />
-            Log weight
-          </button>
-          <button
-            className="primary"
-            onClick={() => setEntry({ kind: "food" })}
-          >
-            <IconAdd size={16} aria-hidden />
-            Log food<kbd aria-hidden>F</kbd>
-          </button>
-        </div>
-      </section>
+      </header>
       {day !== today && (
         <p className="date-context">
-          You’re viewing {fullDate}. New food and weight entries will be logged
-          to this date.
+          New food and weight entries will be logged to {fullDate}.
         </p>
       )}
-      {journal.error ? (
-        <div className="errorcard" role="alert">
-          <h2>This day couldn’t be loaded.</h2>
-          <pre>{journal.error}</pre>
-          <button className="secondary" onClick={journal.retry}>
-            Try again
-          </button>
+      <div className="dashboard-grid">
+        <div className="dashboard-day">
+          {journal.error ? (
+            <div className="errorcard" role="alert">
+              <h2>This day couldn’t be loaded.</h2>
+              <pre>{journal.error}</pre>
+              <button className="secondary" onClick={journal.retry}>
+                Try again
+              </button>
+            </div>
+          ) : journal.view ? (
+            <Day
+              view={journal.view}
+              targets={targets}
+              loading={journal.loading}
+              onAddFood={() => setEntry({ kind: "food" })}
+              onAddWeight={() => setEntry({ kind: "weight" })}
+              onReuse={(source) => setEntry({ kind: "food", source })}
+              onChanged={(message) => {
+                void onChanged(message);
+              }}
+              onSync={onSync}
+            />
+          ) : (
+            <div className="day-loading" role="status" aria-label="Loading day">
+              <i />
+              <i />
+              <i />
+            </div>
+          )}
         </div>
-      ) : journal.view ? (
-        <JournalEntries
-          view={journal.view}
-          targets={targets}
-          loading={journal.loading}
-          onAddFood={() => setEntry({ kind: "food" })}
-          onAddWeight={() => setEntry({ kind: "weight" })}
-          onReuse={(source) => setEntry({ kind: "food", source })}
-          onChanged={(message) => {
-            void onChanged(message);
-          }}
-          onSync={onSync}
+        <Trends
+          unit={unit}
+          days={days}
+          selectedDay={day}
+          revision={revision}
+          onSelect={(picked) => go(picked, true)}
+          onRange={(range) =>
+            navigate(dashboardHref(day === today ? null : day, range))
+          }
         />
-      ) : (
-        <div
-          className="journal-loading"
-          role="status"
-          aria-label="Loading journal"
-        >
-          <i />
-          <i />
-        </div>
-      )}
+      </div>
       {calendar && (
         <DatePicker
           day={day}

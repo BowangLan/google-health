@@ -9,7 +9,7 @@ import { parseDay } from "./format";
 export interface TrendPoint {
   day: string;
   value: number;
-  /** The window was asymmetric (near the end), so this point will move. */
+  /** The window runs past the last day of the range, so this point will move. */
   provisional: boolean;
 }
 
@@ -32,7 +32,7 @@ export function centredMean(rows: SeriesRow[]): TrendPoint[] {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     if (row.weight === null) continue;
-    let sum = 0, seen = 0, ahead = 0;
+    let sum = 0, seen = 0;
     for (let k = -half; k <= half; k++) {
       const other = rows[i + k];
       if (!other) continue;
@@ -40,10 +40,11 @@ export function centredMean(rows: SeriesRow[]): TrendPoint[] {
       if (value === undefined) continue;
       sum += value;
       seen += 1;
-      if (k > 0) ahead += 1;
     }
     if (seen < MIN_PRESENT) continue;
-    out.push({ day: row.day, value: sum / seen, provisional: ahead < half });
+    // Only days that do not exist yet can change this mean. A missing reading
+    // inside the range is final, so it does not make a point provisional.
+    out.push({ day: row.day, value: sum / seen, provisional: i + half >= rows.length });
   }
   return out;
 }

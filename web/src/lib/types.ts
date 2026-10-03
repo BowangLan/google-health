@@ -55,6 +55,8 @@ export interface DayView {
   food: FoodRow[];
   totals: Totals;
   weights: WeightRow[];
+  /** First reading of the most recent earlier weigh-in day, for the change. */
+  previous_weight: { day: string; time: string; value: number } | null;
   /** Google's total calories burned for the day; null until pulled. */
   burned: { kcal: number; fetched: string } | null;
   broken: string[];
@@ -134,6 +136,8 @@ export interface Overview {
 export interface Targets {
   daily_kcal: number | null;
   daily_protein_g: number | null;
+  /** kcal a day to stay under calories burned. 0 aims to match them. */
+  daily_deficit_kcal: number;
   /** Display override. null follows the unit the CLI is configured to print. */
   weight_unit: "kg" | "lb" | null;
 }
@@ -174,6 +178,8 @@ export interface SeriesRow {
   unaccounted_kcal: number | null;
   first_entry: string | null;
   last_entry: string | null;
+  /** Google's calories burned that day; null until pulled. Today's is partial. */
+  burned: number | null;
   weight: number | null;
   weight_readings: WeightReading[];
 }

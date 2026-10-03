@@ -37,12 +37,12 @@ test("the app pulls on open, once per return to the window, and shows what arriv
   ];
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Journal", exact: true }),
+    page.getByRole("heading", { name: "Today", exact: true }),
   ).toBeVisible();
   await expect.poll(() => state.syncCalls.length).toBe(1);
   expect(state.syncCalls[0]).toEqual({ collection: "all", pull: true });
   await expect(status(page)).toHaveAccessibleName(/Synced · just now/);
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator(".island").getByRole("status")).toContainText(
     "2 records arrived from Google Health",
   );
   // Records arrived, so the displayed day reloaded once.

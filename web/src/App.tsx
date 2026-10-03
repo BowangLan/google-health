@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "./lib/api";
 import { lastLine } from "./lib/format";
-import { journalHref, trendsHref } from "./lib/navigation";
+import { dashboardHref } from "./lib/navigation";
 import { useActivity } from "./hooks/useActivity";
 import { useHealth } from "./hooks/useHealth";
 import { useRoute } from "./hooks/useRoute";
 import { useSync, type SyncTrigger } from "./hooks/useSync";
-import { Journal } from "./components/Journal";
-import { SyncPanel, SyncStatus, changes } from "./components/Sync";
+import { Dashboard } from "./components/Dashboard";
+import { Island } from "./components/Island";
+import { SyncPanel, changes } from "./components/Sync";
 import { SettingsPopover } from "./components/Settings";
-import { Trends } from "./components/Trends";
 import { ActivityPanel } from "./components/ActivityStrip";
 import { Dialog } from "./components/Dialog";
 import { ShortcutSheet } from "./components/Shortcuts";
@@ -17,8 +17,6 @@ import type { RunCommand, SyncResult } from "./lib/types";
 import { IconContext } from "@phosphor-icons/react";
 import {
   IconSettings,
-  IconTrends,
-  IconLedger,
   IconPulse,
   IconKeyboard,
   IconActivity,
@@ -125,8 +123,6 @@ export default function App() {
       )
         return;
       const actions: Record<string, () => void> = {
-        j: () => navigate(journalHref()),
-        g: () => navigate(trendsHref()),
         p: () => setPanel("sync"),
         "?": () => setPanel("shortcuts"),
       };
@@ -138,12 +134,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
-
-  useEffect(() => {
-    setPanel(null);
-    window.scrollTo({ top: 0 });
-  }, [route.page]);
+  }, []);
 
   useEffect(() => {
     const keyboard = () => {
@@ -173,65 +164,51 @@ export default function App() {
         Skip to content
       </a>
       <div className="app-shell">
-        <aside className="sidebar" aria-label="Health navigation">
-          <a className="brand" href={journalHref()}>
+        <header className="topbar">
+          <a className="brand" href={dashboardHref(null, route.days)}>
             <span className="brand-symbol">
-              <IconPulse size={22} aria-hidden />
+              <IconPulse size={17} aria-hidden />
             </span>
             <span className="wordmark">Health</span>
-            <span className="local-label">Personal</span>
           </a>
-          <nav className="main-nav" aria-label="Main">
-            <a
-              href={journalHref()}
-              aria-current={route.page === "journal" ? "page" : undefined}
-            >
-              <IconLedger aria-hidden />
-              Journal
-            </a>
-            <a
-              href={trendsHref()}
-              aria-current={route.page === "trends" ? "page" : undefined}
-            >
-              <IconTrends aria-hidden />
-              Trends
-            </a>
-          </nav>
-          <div className="sidebar-bottom">
+          <Island
+            overview={health.overview}
+            last={sync.last}
+            failure={sync.failure}
+            running={sync.running}
+            busy={activity.busy}
+            toast={activity.toast}
+            expanded={panel === "sync"}
+            onOpen={() => setPanel("sync")}
+            onDismiss={activity.dismiss}
+          />
+          <nav className="utilities" aria-label="Utilities">
             <button
-              className="nav-utility"
+              className="utility"
+              aria-label="Activity"
+              title="Activity"
               onClick={() => setPanel("activity")}
             >
               <IconActivity aria-hidden />
-              Activity
-              {activity.busy && (
-                <span className="activity-running">Running</span>
-              )}
             </button>
             <button
-              className="nav-utility"
+              className="utility"
+              aria-label="Settings"
+              title="Settings"
               onClick={() => setPanel("settings")}
             >
               <IconSettings aria-hidden />
-              Settings
             </button>
             <button
-              className="nav-utility"
+              className="utility"
+              aria-label="Shortcuts"
+              title="Shortcuts (?)"
               onClick={() => setPanel("shortcuts")}
             >
               <IconKeyboard aria-hidden />
-              Shortcuts<kbd aria-hidden>?</kbd>
             </button>
-            <SyncStatus
-              overview={health.overview}
-              last={sync.last}
-              failure={sync.failure}
-              running={sync.running}
-              expanded={panel === "sync"}
-              onClick={() => setPanel("sync")}
-            />
-          </div>
-        </aside>
+          </nav>
+        </header>
         <main className="workspace" id="main" tabIndex={-1}>
           {health.error ? (
             <div className="startup-error">
@@ -248,18 +225,15 @@ export default function App() {
               </button>
             </div>
           ) : !health.today ? (
-            <div
-              className="journal-loading"
-              role="status"
-              aria-label="Loading Health"
-            >
+            <div className="day-loading" role="status" aria-label="Loading Health">
+              <i />
               <i />
               <i />
             </div>
-          ) : route.page === "journal" ? (
-            <Journal
-              key={route.day ?? health.today}
+          ) : (
+            <Dashboard
               day={route.day ?? health.today}
+              days={route.days}
               today={health.today}
               unit={health.weightUnit}
               targets={health.targets}
@@ -269,28 +243,15 @@ export default function App() {
               onChanged={afterWrite}
               onSync={() => setPanel("sync")}
             />
-          ) : (
-            <div className="trends-page">
-              <header className="page-header">
-                <div>
-                  <div className="eyebrow">Long-term view</div>
-                  <h1>Trends</h1>
-                  <p>Understand your weight and nutrition over time.</p>
-                </div>
-              </header>
-              <Trends
-                unit={health.weightUnit}
-                days={route.days}
-                inspectedDay={route.day}
-                navigate={navigate}
-                revision={revision}
-              />
-            </div>
           )}
         </main>
       </div>
       {panel === "sync" && (
-        <Dialog title="Google Health" onClose={() => setPanel(null)}>
+        <Dialog
+          title="Google Health"
+          className="island-sheet"
+          onClose={() => setPanel(null)}
+        >
           <SyncPanel
             overview={health.overview}
             last={sync.last}
@@ -320,15 +281,6 @@ export default function App() {
       )}
       {panel === "shortcuts" && (
         <ShortcutSheet onClose={() => setPanel(null)} />
-      )}
-      {activity.toast && (
-        <div
-          role={activity.toast.bad ? "alert" : "status"}
-          className={"toast" + (activity.toast.bad ? " bad" : "")}
-        >
-          <span>{activity.toast.message}</span>
-          <button onClick={activity.dismiss}>Dismiss</button>
-        </div>
       )}
     </IconContext.Provider>
   );
