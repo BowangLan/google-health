@@ -190,3 +190,11 @@ serves an isolated production preview on port 42931 and intercepts every API
 request with fixtures. Tests do not read or mutate real health logs. Coverage
 includes the single dashboard and legacy links, history and reloads, backdated logging and reuse,
 edit/delete flows, failure recovery, keyboard focus, and responsive dark styling.
+
+## Design comparisons
+
+Run `bun run design` from the repository root to compare three responsive,
+dark-mode, task-focused sample-data concepts on port 5174. Start at
+<http://127.0.0.1:5174/?prototype=1&variant=D> and use the bottom selector.
+See [the design brief](src/app/prototypes/health-designs/README.md) for the three
+directions, interactions, and saved screenshots.

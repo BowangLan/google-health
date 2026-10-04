@@ -9,7 +9,8 @@
     "start": "turbo run build && uv run hsync web",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "design": "bun run --cwd apps/web design"
   },
   "devDependencies": {
     "turbo": "^2"
