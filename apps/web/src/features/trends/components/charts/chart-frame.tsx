@@ -49,8 +49,8 @@ export function ChartFrame({
     bottom - ((value - min) / (max - min || 1)) * (bottom - top);
 
   return (
-    <figure className="viz m-0 [&_+_.viz]:mt-1">
-      <figcaption className="viz-head flex flex-wrap items-baseline gap-y-1 gap-x-2.5 [padding:12px_18px_2px]">
+    <figure className="viz m-0 [&_+_.viz]:mt-3 [&_+_.viz]:border-t [&_+_.viz]:[border-top-style:solid] [&_+_.viz]:border-t-border">
+      <figcaption className="viz-head flex flex-wrap items-baseline gap-y-1 gap-x-2.5 [padding:14px_18px_6px] [&_.viz-sub:has(.macro-legend)]:contents">
         <span className="viz-title text-[12px] font-semibold">{title}</span>
         {subtitle && <span className="viz-sub text-subtle text-[11.5px]">{subtitle}</span>}
       </figcaption>

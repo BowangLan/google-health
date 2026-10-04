@@ -10,7 +10,7 @@ export function UnitPicker({
   return (
     <div className={fieldClassName}>
       <span>Unit</span>
-      <div className={segmentedClassName}>
+      <div className={segmentedClassName} role="group" aria-label={"Unit"}>
         {(["kg", "lb"] as const).map((unit) => (
           <button
             key={unit}

@@ -180,7 +180,7 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
           {consequence}
         </div>
       )}
-      <div className="buttons flex items-center gap-2 [padding:8px_22px_20px] [&_.primary]:[flex:1]">
+      <div className="buttons flex items-center gap-2 pt-2 [&_.primary]:[flex:1]">
         <Button variant="primary" type="submit" disabled={saving || !dirty}>Save changes</Button>
         <Button variant="secondary" type="button" onClick={onCancel}>Cancel</Button>
       </div>

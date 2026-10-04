@@ -25,7 +25,7 @@ function IncomingRow({ row }: { row: SyncRow }) {
   return (
     <li>
       <span className={cn(
-        "sync-tag justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
+        "sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
         "text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
         "[&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive"
       )}>{label(row.tag)}</span>
@@ -94,9 +94,9 @@ export function SyncPanel({
   const canPush = !busy && local.blocked === 0 && (local.pushable > 0 || deleting);
 
   return (
-    <div className="sync-panel grid">
-      <header className={"sync-head flex justify-between items-start gap-4 py-5 px-5.5 border-b [border-bottom-style:solid] border-b-border [&_strong]:block [&_strong]:[font:650_20px/1.2_var(--display)] [&_strong]:tracking-[-0.02em] [&_strong_span]:text-subtle [&_strong_span]:font-normal [&_strong_span]:text-[15px] [&.warn_strong]:text-warning [&_p]:mt-1.5 [&_p]:text-muted-foreground [&_p]:text-[12.5px] [&_p]:max-w-[46ch] [&_p]:wrap-anywhere [&_.secondary]:shrink-0 " + summary.tone}>
-        <div>
+    <div className="sync-panel grid [&_>_section:last-child]:border-b-0">
+      <header className={"sync-head flex justify-between items-start gap-4 py-5 px-6 max-[761px]:px-5 max-[421px]:flex-wrap border-b [border-bottom-style:solid] border-b-border [&_strong]:block [&_strong]:[font:650_20px/1.2_var(--display)] [&_strong]:tracking-[-0.02em] [&_strong_span]:text-subtle [&_strong_span]:font-normal [&_strong_span]:text-[15px] [&.warn_strong]:text-warning [&_p]:mt-1.5 [&_p]:text-muted-foreground [&_p]:text-[12.5px] [&_p]:max-w-[46ch] [&_p]:wrap-anywhere [&_.secondary]:shrink-0 " + summary.tone}>
+        <div className="min-w-0 flex-1 max-[421px]:basis-full">
           <strong>
             {summary.label}
             {summary.brief && <span> · {summary.brief}</span>}
@@ -116,18 +116,18 @@ export function SyncPanel({
 
       {attention.length > 0 && (
         <section className={cn(
-          "sync-section grid gap-3 py-4.5 px-5.5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
+          "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
           "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
           "[&_.text-action]:justify-self-start"
         )} aria-label="Needs attention">
           <h3>
             Needs attention <span>{attention.length}</span>
           </h3>
-          <ul className="sync-rows list-none m-0 p-0 grid gap-2 [&_li]:grid [&_li]:grid-cols-[84px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-baseline [&_li]:text-[12px]">
+          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
             {attention.map((item) => (
               <li key={item.key}>
                 <span className={cn(
-                  "sync-tag justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
+                  "sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
                   "text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
                   "[&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive warn"
                 )}>{item.label}</span>
@@ -150,7 +150,7 @@ export function SyncPanel({
       )}
 
       <section className={cn(
-        "sync-section grid gap-3 py-4.5 px-5.5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
+        "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
         "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
         "[&_.text-action]:justify-self-start"
       )} aria-label="To Google Health">
@@ -175,10 +175,10 @@ export function SyncPanel({
               return (
                 <div className="sync-group [&_h4]:mb-[7px] [&_h4]:text-subtle [&_h4]:text-[11px] [&_h4]:font-[560]" key={c.kind}>
                   <h4>{c.kind === "food" ? "Food" : "Weight"}</h4>
-                  <ul className="sync-rows list-none m-0 p-0 grid gap-2 [&_li]:grid [&_li]:grid-cols-[84px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-baseline [&_li]:text-[12px]">
+                  <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
                     {rows.map(([tag, text], index) => (
                       <li key={`${tag}-${index}-${text}`}>
-                        <span className={"sync-tag justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning [&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive" + (tag === "delete" ? " bad" : "")}>{tag}</span>
+                        <span className={"sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning [&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive" + (tag === "delete" ? " bad" : "")}>{tag}</span>
                         <span className="sync-row-text text-foreground wrap-anywhere [&_time]:mr-[7px] [&_time]:text-subtle">{text}</span>
                       </li>
                     ))}
@@ -189,8 +189,8 @@ export function SyncPanel({
             })}
             {local.deletions > 0 && (
               <label className={cn(
-                "sync-check flex items-center gap-2 text-muted-foreground text-[12px] [&_input]:w-[15px] [&_input]:h-[15px]",
-                "[&_input]:min-h-0 [&_input]:m-0 [&_input]:[accent-color:var(--accent)]"
+                "sync-check flex items-start gap-2.5 [&_input]:mt-0.5 [&_input]:shrink-0 text-muted-foreground text-[12px] [&_input]:w-[15px] [&_input]:h-[15px]",
+                "[&_input]:min-h-0 [&_input]:mx-0 [&_input]:mb-0 [&_input]:[accent-color:var(--accent)]"
               )}>
                 <input
                   type="checkbox"
@@ -224,7 +224,7 @@ export function SyncPanel({
 
       {last && (incoming.length > 0 || kept.length > 0) && (
         <section className={cn(
-          "sync-section grid gap-3 py-4.5 px-5.5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
+          "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
           "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
           "[&_.text-action]:justify-self-start"
         )} aria-label="From Google Health">
@@ -236,7 +236,7 @@ export function SyncPanel({
                 : count(incoming.length, "record")}
             </span>
           </h3>
-          <ul className="sync-rows list-none m-0 p-0 grid gap-2 [&_li]:grid [&_li]:grid-cols-[84px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-baseline [&_li]:text-[12px]">
+          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
             {(showAll ? incoming : incoming.slice(0, SHOWN)).map((row, index) => (
               <IncomingRow row={row} key={`${row.text}-${index}`} />
             ))}
@@ -257,7 +257,7 @@ export function SyncPanel({
 
       {last && (
         <details className={cn(
-          "sync-output [padding:12px_22px_20px] text-[12px] [&_summary]:text-subtle [&_code]:block",
+          "sync-output px-6 pt-3 pb-5 max-[761px]:px-5 text-[12px] [&_summary]:cursor-pointer [&_summary]:py-1 [&_summary]:text-subtle [&_code]:block",
           "[&_code]:[margin:10px_0_6px] [&_code]:[font:11px/1.5_var(--mono)] [&_code]:text-muted-foreground",
           "[&_code]:wrap-anywhere [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
           "[&_pre]:[font:11px/1.6_var(--mono)] [&_pre]:text-muted-foreground [&_pre.err]:text-destructive"

@@ -40,8 +40,15 @@ function Stat({
   tone?: string;
 }) {
   return (
-    <div className={`stat [&.budget.ok_.stat-value]:[color:#30d158] [&.budget.closing_.stat-value]:[color:#ffd60a] min-w-0 [padding:14px_16px_13px] bg-card border border-solid border-border rounded-[18px] [&.calories_.stat-label_svg]:text-energy [&.budget_.stat-label_svg]:text-energy [&.budget.over_.stat-value]:text-over [&.protein_.stat-label_svg]:text-protein min-[1181px]:max-[1441px]:[padding:13px_13px_12px] max-[761px]:[&.budget]:col-span-full ${tone}`}>
-      <div className="stat-label flex items-center gap-1.5 text-[12px] font-semibold [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:text-weight">
+    <div className={cn(
+      "stat min-w-0 p-4 bg-card border border-solid border-border rounded-[18px] max-[381px]:p-3",
+      "[&.budget]:col-span-full [&.budget.ok_.stat-value]:[color:#30d158] [&.budget.closing_.stat-value]:[color:#ffd60a]",
+      "[&.calories_.stat-label_svg]:text-energy [&.budget_.stat-label_svg]:text-energy [&.budget.over_.stat-value]:text-over [&.protein_.stat-label_svg]:text-protein",
+      "min-[762px]:[&.budget]:grid min-[762px]:[&.budget]:grid-cols-[auto_auto_minmax(0,_1fr)] min-[762px]:[&.budget]:items-center min-[762px]:[&.budget]:gap-x-4",
+      "min-[762px]:[&.budget]:py-3 min-[762px]:[&.budget_.stat-value]:mt-0 min-[762px]:[&.budget_.stat-hint]:mt-0 min-[762px]:[&.budget_.stat-hint]:text-right",
+      tone
+    )}>
+      <div className="stat-label flex items-center gap-1.5 text-[12px] font-semibold [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:text-weight max-[381px]:text-[11px] max-[381px]:whitespace-nowrap">
         {tone.startsWith("budget") ? (
           <IconBurned aria-hidden />
         ) : tone === "calories" ? (
@@ -67,7 +74,7 @@ function Stat({
           </>
         )}
       </div>
-      <div className="stat-hint mt-0.5 text-subtle text-[11.5px] overflow-hidden whitespace-nowrap text-ellipsis">{hint ?? "\u00A0"}</div>
+      <div className="stat-hint mt-1 text-subtle text-[11.5px] leading-4 text-pretty">{hint ?? "\u00A0"}</div>
     </div>
   );
 }
@@ -223,7 +230,7 @@ export function TrendsSection({
         </div>
         <div
           className={cn(
-            "skeleton-stats grid grid-cols-[repeat(5,_minmax(0,_1fr))] gap-3 [&_i]:block [&_i]:bg-card [&_i]:border",
+            "skeleton-stats grid grid-cols-[repeat(4,_minmax(0,_1fr))] gap-3 [&_i]:block [&_i]:bg-card [&_i]:border [&_i:first-child]:col-span-full [&_i:first-child]:h-14",
             "[&_i]:border-solid [&_i]:border-border [&_i]:animate-[breathe_1.6s_ease-in-out_infinite] [&_i]:h-24",
             "[&_i]:rounded-[18px] max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))]",
             "max-[761px]:[&_i:first-child]:col-span-full"
@@ -258,12 +265,12 @@ export function TrendsSection({
   return (
     <section className="trends grid gap-3 min-w-0 [&[aria-busy=true]_.chart-panel]:opacity-[0.7]" aria-label="Trends" aria-busy={loading}>
       <div className="trends-bar flex items-center gap-3 min-h-[36px] [&_h2]:text-[15px] [&_h2]:tracking-[-0.01em] max-[761px]:flex-wrap">
-        <span className="range-dates text-subtle text-[12px] max-[761px]:[order:3] max-[761px]:w-full">
+        <span className="range-dates text-subtle text-[12px] max-[761px]:w-full">
           {parseDay(series.since).toLocaleDateString([], {
             day: "numeric",
             month: "short",
           })}
-          {" - "}
+          {" – "}
           {parseDay(series.until).toLocaleDateString([], {
             day: "numeric",
             month: "short",
@@ -275,7 +282,7 @@ export function TrendsSection({
 
       {/* Range summaries stay independent of the selected day's readings.
           The budget is always today's, whatever day is selected. */}
-      <div className="stats grid grid-cols-[repeat(5,_minmax(0,_1fr))] gap-3 max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
+      <div className="stats grid grid-cols-[repeat(4,_minmax(0,_1fr))] gap-3 max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
         <Stat
           value={budget.value}
           label="Budget today"
@@ -340,7 +347,7 @@ export function TrendsSection({
             7-day average
           </span>
         </div>
-        <div className="dayread flex items-center flex-wrap gap-y-1 gap-x-4.5 min-h-[40px] [margin:12px_18px_4px] py-2 px-3.5 rounded-[12px] bg-popover text-[12px]" aria-live="polite">
+        <div className="dayread flex items-center flex-wrap gap-y-1.5 gap-x-4 min-h-[40px] [margin:12px_18px_4px] py-2.5 px-3 rounded-[12px] border border-solid border-border bg-popover text-[12px]" aria-live="polite">
           <div className="dayread-head flex gap-2.5 font-semibold">
             {shown
               ? parseDay(shown.day).toLocaleDateString([], {
@@ -405,10 +412,12 @@ export function TrendsSection({
             unit="grams"
           />
         </div>
-        <p className="viz-caption [padding:10px_18px_14px] text-subtle text-[11.5px] leading-[1.55] max-w-[80ch]">
+        <p className="viz-caption border-t [border-top-style:solid] border-t-border mt-3 [padding:14px_18px_14px] text-subtle text-[11.5px] leading-[1.65]">
+          <span className="block max-w-[80ch]">
           Click a chart to open that day. Logged intake and measured weight are
           two records side by side, not cause and effect: weight moves with
           hydration, sleep and time of day.
+          </span>
         </p>
       </section>
     </section>

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { fieldClassName, formClassName, segmentedClassName } from "@/components/forms/form-styles";
+import { fieldClassName, formClassName, numberInputClassName, segmentedClassName } from "@/components/forms/form-styles";
 import { Button } from "@/components/button";
 import { useState } from "react";
 import * as api from "@/lib/api";
@@ -53,10 +53,10 @@ export function SettingsPopover({
 
   return (
     <div className={cn(
-      "popover p-5.5 grid gap-4.5 [&_.fields]:p-0 [&_h3]:text-[13px] [&_.line]:flex [&_.line]:flex-wrap",
-      "[&_.line]:justify-between [&_.line]:gap-y-1.5 [&_.line]:gap-x-3 [&_.line]:text-muted-foreground",
-      "[&_.line]:text-[12px] [&_.line]:wrap-anywhere [&_.line]:mt-2 [&_hr]:w-full [&_hr]:border-0 [&_hr]:border-t",
-      "[&_hr]:[border-top-style:solid] [&_hr]:border-t-border max-[761px]:p-4.5"
+      "popover p-6 grid gap-4 [&_.fields]:p-0 [&_h3]:text-[13px] [&_h3]:font-semibold",
+      "[&_.line]:grid [&_.line]:grid-cols-[64px_minmax(0,1fr)] [&_.line]:items-baseline [&_.line]:gap-3 [&_.line]:text-muted-foreground",
+      "[&_.line]:text-[11.5px] [&_.line]:leading-[1.6] [&_.line_span:last-child]:text-right [&_.line_span:last-child]:wrap-anywhere [&_.line_span:last-child]:[font-family:var(--mono)] [&_hr]:w-full [&_hr]:border-0 [&_hr]:border-t",
+      "[&_hr]:[border-top-style:solid] [&_hr]:border-t-border max-[761px]:p-5"
     )}>
       <h3>Targets</h3>
       <form className={formClassName} onSubmit={submit}>
@@ -64,6 +64,7 @@ export function SettingsPopover({
           <span>Daily calorie target</span>
           <input
             type="number"
+            className={numberInputClassName}
             step="any"
             value={kcal}
             onChange={(event) => setKcal(event.target.value)}
@@ -74,6 +75,7 @@ export function SettingsPopover({
           <span>Daily protein target (g)</span>
           <input
             type="number"
+            className={numberInputClassName}
             step="any"
             value={protein}
             onChange={(event) => setProtein(event.target.value)}
@@ -83,6 +85,7 @@ export function SettingsPopover({
           <span>Daily deficit goal (kcal)</span>
           <input
             type="number"
+            className={numberInputClassName}
             step="any"
             min="0"
             value={deficit}
@@ -95,10 +98,10 @@ export function SettingsPopover({
         </label>
         <div className={fieldClassName}>
           <span>Show weight in</span>
-          <div className={segmentedClassName}>
+          <div className={cn(segmentedClassName, "[&_button:first-child]:[flex:2.5]")}>
             {(
               [
-                ["", `follow the CLI (${first?.weight_unit ?? "kg"})`],
+                ["", `Follow CLI (${first?.weight_unit ?? "kg"})`],
                 ["kg", "kg"],
                 ["lb", "lb"],
               ] as const
@@ -119,7 +122,7 @@ export function SettingsPopover({
           </span>
         </div>
         {problem && <div className="consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground">{problem}</div>}
-        <div className="buttons flex items-center gap-2 [padding:8px_22px_20px] [&_.primary]:[flex:1]">
+        <div className="buttons flex items-center gap-2 pt-1 [&_.primary]:[flex:1]">
           <Button variant="primary" type="submit">
             Save targets
           </Button>
@@ -127,12 +130,14 @@ export function SettingsPopover({
       </form>
       <hr />
       <h3>Paths</h3>
-      {rows.map(([term, value]) => (
-        <div className="line" key={term}>
-          <span>{term}</span>
-          <span>{value}</span>
-        </div>
-      ))}
+      <div className="grid gap-2.5">
+        {rows.map(([term, value]) => (
+          <div className="line" key={term}>
+            <span>{term}</span>
+            <span>{value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

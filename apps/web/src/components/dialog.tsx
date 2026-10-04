@@ -50,10 +50,10 @@ export function Dialog({
       }}
     >
       <div className={cn(
-        "dialog-heading flex justify-between items-center gap-3 [padding:16px_16px_14px_22px] bg-inherit border-b",
+        "dialog-heading flex justify-between items-center gap-3 [padding:18px_18px_16px_24px] bg-inherit border-b",
         "[border-bottom-style:solid] border-b-border sticky top-0 z-[2] [&_h2]:[font:650_17px_var(--display)]",
-        "[&_h2]:tracking-[-0.015em] [&_.step]:[background:rgb(255_255_255_/_0.07)] [&_.step]:w-7.5 [&_.step]:h-7.5",
-        "max-[761px]:[padding:14px_14px_12px_18px]"
+        "[&_h2]:tracking-[-0.015em] [&_h2]:min-w-0 [&_h2]:leading-6 [&_.step]:[background:rgb(255_255_255_/_0.07)] [&_.step]:w-8 [&_.step]:h-8 [&_.step_svg]:w-4 [&_.step_svg]:h-4",
+        "max-[761px]:[padding:16px_14px_14px_20px]"
       )}>
         <h2 id={titleId}>{title}</h2>
         <Button

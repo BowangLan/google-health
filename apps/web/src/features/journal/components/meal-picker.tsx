@@ -15,6 +15,7 @@ export function MealPicker({
       value={value as (typeof MEALS)[number]}
       onChange={onChange}
       titles={MEAL_NAME}
+      className="max-[381px]:[&_.seg_button]:px-0.5 max-[381px]:[&_.seg_button:first-child]:[flex:1.35] max-[381px]:[&_.seg_button:last-child]:[flex:1.2]"
     />
   );
 }

@@ -50,9 +50,9 @@ export function DatePicker({
       onClose={onClose}
       className="date-dialog"
     >
-      <div className="date-picker [padding:20px_22px_22px] max-[761px]:p-4.5">
+      <div className="date-picker p-6 max-[761px]:p-5">
         <form
-          className="date-jump grid grid-cols-[minmax(0,_1fr)_auto] items-end gap-2.5 mb-5.5"
+          className="date-jump grid grid-cols-[minmax(0,_1fr)_auto] items-end gap-2.5 mb-5.5 [&_.secondary]:min-h-10 max-[761px]:[&_.secondary]:min-h-11"
           onSubmit={(event) => {
             event.preventDefault();
             const chosen = validDay(input);
@@ -72,7 +72,7 @@ export function DatePicker({
             Go
           </Button>
         </form>
-        <div className="monthnav flex items-center gap-1 mb-3.5 [&_h3]:mr-auto [&_h3]:[font:650_17px_var(--display)] [&_h3]:tracking-[-0.015em]">
+        <div className="monthnav flex items-center gap-1 mb-3.5 pb-2 [&_h3]:mr-auto [&_h3]:[font:650_17px_var(--display)] [&_h3]:tracking-[-0.015em]">
           <h3>
             {parseDay(month + "-01").toLocaleDateString([], {
               month: "long",
@@ -96,7 +96,7 @@ export function DatePicker({
         </div>
         {error ? (
           <div className={cn(
-            "errorcard border border-solid border-[rgb(245_184_92_/_0.3)] bg-warning-muted rounded-[var(--r-tile)] p-5.5",
+            "errorcard border border-solid border-[rgb(245_184_92_/_0.3)] bg-warning-muted rounded-[var(--r-tile)] p-6",
             "grid gap-3.5 text-[13px] [&_h2]:text-[16px] [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
             "[&_pre]:[font:11.5px/1.6_var(--mono)] [&_pre]:text-muted-foreground [&_.secondary]:justify-self-start"
           )} role="alert">
@@ -116,11 +116,11 @@ export function DatePicker({
             onSelect={onPick}
           />
         ) : (
-          <div className="calendar-placeholder min-h-[280px] py-10 px-0 text-subtle" role="status">
+          <div className="calendar-placeholder min-h-[312px] grid place-items-center py-10 px-0 text-subtle text-[12px]" role="status">
             Loading month…
           </div>
         )}
-        <div className="calendar-foot flex items-center justify-between gap-3 border-t [border-top-style:solid] border-t-border mt-4 pt-3.5 text-subtle text-[11px]">
+        <div className="calendar-foot flex items-center justify-between gap-3 [&_span]:leading-[1.5] [&_.secondary]:shrink-0 border-t [border-top-style:solid] border-t-border mt-4 pt-3.5 text-subtle text-[11px]">
           <span>Calories logged on each day</span>
           <Button variant="secondary" onClick={() => onPick(today)}>
             Today

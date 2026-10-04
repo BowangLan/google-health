@@ -59,7 +59,7 @@ export function WeightComposer({
   }
   return (
     <>
-      <p className="record-date text-muted-foreground bg-popover py-[11px] px-5.5 border-b [border-bottom-style:solid] border-b-border text-[12px] max-[761px]:py-[11px] max-[761px]:px-4.5">
+      <p className="record-date text-muted-foreground bg-popover py-3 px-6 border-b [border-bottom-style:solid] border-b-border text-[12px] max-[761px]:px-5">
         Logging for{" "}
         {parseDay(day).toLocaleDateString([], {
           weekday: "long",
@@ -100,7 +100,7 @@ export function WeightComposer({
             {error}
           </div>
         )}
-        <div className="buttons flex items-center gap-2 [padding:8px_22px_20px] [&_.primary]:[flex:1]">
+        <div className="buttons flex items-center gap-2 pt-2 [&_.primary]:[flex:1]">
           <Button variant="primary" type="submit" disabled={saving}>
             {saving ? "Logging…" : "Log weight"}
           </Button>

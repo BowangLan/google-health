@@ -96,7 +96,7 @@ export function Dashboard({
   }, [day, days, navigate]);
 
   return (
-    <div className="dashboard grid gap-5.5">
+    <div className="dashboard grid gap-6">
       <header className="day-header flex items-end justify-between flex-wrap gap-y-4 gap-x-6" aria-label="Selected day and logging">
         <div className={cn(
           "day-title [&_h1]:[font:650_34px/1.08_var(--display)] [&_h1]:tracking-[-0.028em] [&_time]:block [&_time]:mt-1",
@@ -171,7 +171,7 @@ export function Dashboard({
           choose its date in the food form.
         </p>
       )}
-      <div className="dashboard-grid grid grid-cols-[minmax(360px,_5fr)_minmax(0,_7fr)] gap-5 items-start max-[1181px]:grid-cols-[minmax(0,_1fr)]">
+      <div className="dashboard-grid grid grid-cols-[minmax(360px,_5fr)_minmax(0,_7fr)] gap-5 items-start max-[1181px]:grid-cols-[minmax(0,_1fr)] max-[761px]:gap-6">
         <div className="dashboard-day min-w-0">
           {journal.error ? (
             <div className={cn(

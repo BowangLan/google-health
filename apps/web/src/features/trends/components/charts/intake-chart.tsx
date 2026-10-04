@@ -65,7 +65,7 @@ export function IntakeChart({
         <>
           {coverage}
           <span className={cn(
-            "macro-legend inline-flex flex-wrap gap-y-1 gap-x-2.5 ml-3 [&_span]:inline-flex [&_span]:items-center",
+            "macro-legend flex basis-full flex-wrap gap-y-1.5 gap-x-3 mt-1 [&_span]:inline-flex [&_span]:items-center",
             "[&_span]:gap-[5px] [&_span::before]:[content:''] [&_span::before]:w-[7px] [&_span::before]:h-[7px]",
             "[&_span::before]:rounded-[2px] [&_span::before]:[background:currentColor] [&_.protein]:text-protein",
             "[&_.carbs]:text-carbs [&_.fat]:text-fat [&_.unaccounted]:[color:#8e8e93] [&_.over]:text-over",

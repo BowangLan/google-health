@@ -89,7 +89,8 @@ function Nutrition({
           "[&_dd_span]:text-muted-foreground [&_dd_span]:text-[13px] [&_.ring-ratio]:text-subtle",
           "[&_.ring-ratio]:text-[11.5px] [&_.ring-ratio.ok]:[color:#30d158] [&_.ring-ratio.closing]:[color:#ffd60a]",
           "[&_.ring-ratio.over]:text-over max-[761px]:[&_b]:text-[23px] max-[381px]:w-full",
-          "max-[381px]:grid-cols-[repeat(2,_minmax(0,_1fr))]"
+          "max-[381px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[381px]:items-start max-[381px]:gap-3",
+          "max-[381px]:[&_dd]:flex-wrap max-[381px]:[&_dd_span]:w-full max-[381px]:[&_dd_span]:text-[11px] max-[381px]:[&_dd_span]:whitespace-nowrap"
         )}>
           <div
             className={
@@ -147,7 +148,7 @@ function Nutrition({
           )}
         </div>
         <dl className={cn(
-          "macro-values flex flex-wrap gap-y-1 gap-x-4.5 m-0 text-[12px] [&_>_div]:flex [&_>_div]:gap-1.5",
+          "macro-values flex flex-wrap gap-y-1.5 gap-x-4 m-0 text-[12px] [&_>_div]:flex [&_>_div]:gap-1.5 [&_>_div]:whitespace-nowrap",
           "[&_dt]:text-subtle [&_.protein_dt]:text-protein [&_.carbs_dt]:text-carbs [&_.fat_dt]:text-fat [&_dd]:m-0",
           "[&_dd]:text-foreground"
         )}>
@@ -203,24 +204,26 @@ function FoodEntry({
 }) {
   return (
     <article className={cn(
-      "food-entry relative grid grid-cols-[42px_minmax(0,_1fr)_auto_auto] items-center gap-2.5 my-0 mx-1.5 py-[9px]",
+      "food-entry relative grid grid-cols-[42px_minmax(0,_1fr)_auto_44px] items-baseline gap-2.5 my-0 mx-1.5 py-3",
       "px-3 rounded-[14px] [&_+_.food-entry::before]:[content:''] [&_+_.food-entry::before]:absolute",
       "[&_+_.food-entry::before]:top-0 [&_+_.food-entry::before]:left-16 [&_+_.food-entry::before]:right-3",
       "[&_+_.food-entry::before]:border-t [&_+_.food-entry::before]:[border-top-style:solid]",
       "[&_+_.food-entry::before]:border-t-border pointer-hover:[&:hover]:bg-popover",
       "pointer-hover:[&:hover::before]:opacity-[0] pointer-hover:[&:hover_+_.food-entry::before]:opacity-[0]",
-      "pointer-hover:[&_.record-actions]:opacity-[0] pointer-hover:[&:hover_.record-actions]:opacity-[1]",
-      "pointer-hover:[&:focus-within_.record-actions]:opacity-[1] [&_.record-actions]:[transition:opacity_140ms_ease]",
+      "min-[762px]:pointer-hover:[&_.record-actions]:opacity-[0] min-[762px]:pointer-hover:[&:hover_.record-actions]:opacity-[1]",
+      "min-[762px]:pointer-hover:[&:focus-within_.record-actions]:opacity-[1] [&_.record-actions]:[transition:opacity_140ms_ease]",
       "max-[761px]:grid-cols-[minmax(0,_1fr)_auto] max-[761px]:gap-y-0.5 max-[761px]:gap-x-2.5 max-[761px]:py-2.5",
+      "[&_.record-actions]:col-start-3 [&_.record-actions]:row-start-1 [&_.record-actions]:self-start [&_.record-actions]:relative [&_.record-actions]:-top-1.25",
       "max-[761px]:px-3 max-[761px]:[&_+_.food-entry::before]:left-3 max-[761px]:[&_.record-actions]:col-span-full",
-      "max-[761px]:[&_.record-actions]:[margin-left:-8px]"
+      "max-[761px]:[&_.record-actions]:col-start-1 max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:top-0",
+      "max-[761px]:[&_.record-actions]:[margin-left:-8px] max-[761px]:[&_.record-actions]:opacity-100"
     )} aria-label={row.name}>
-      <time className="food-entry-time text-subtle text-[11.5px] max-[761px]:col-span-full max-[761px]:text-[11px]" dateTime={row.time}>
+      <time className="food-entry-time text-subtle text-[11.5px] leading-5 max-[761px]:col-span-full max-[761px]:text-[11px]" dateTime={row.time}>
         {clock(row.time)}
       </time>
       <div className={cn(
-        "food-entry-body min-w-0 [&_h4]:flex [&_h4]:items-center [&_h4]:gap-1.5 [&_h4]:text-[13px] [&_h4]:font-[560]",
-        "[&_h4]:wrap-anywhere [&_h4_svg]:text-subtle [&_>_p]:flex [&_>_p]:flex-wrap [&_>_p]:items-center",
+        "food-entry-body min-w-0 [&_h4]:text-[13px] [&_h4]:leading-5 [&_h4]:font-[560]",
+        "[&_h4]:wrap-anywhere [&_h4_svg]:text-subtle [&_h4_svg]:mr-1.5 [&_h4_svg]:[vertical-align:-2px] [&_>_p]:flex [&_>_p]:flex-wrap [&_>_p]:items-center",
         "[&_>_p]:gap-y-0.5 [&_>_p]:gap-x-2.5 [&_>_p]:mt-0.5 [&_>_p]:text-subtle [&_>_p]:text-[11.5px]",
         "[&_.protein]:[color:color-mix(in_srgb,_var(--protein)_75%,_var(--text-3))]",
         "[&_.carbs]:[color:color-mix(in_srgb,_var(--carbs)_75%,_var(--text-3))]",
@@ -244,7 +247,7 @@ function FoodEntry({
           )}
         </p>
       </div>
-      <div className="food-entry-energy [font:600_14px_var(--rounded)] text-right [&_>_span]:block [&_>_span]:[font:400_10.5px_var(--sans)] [&_>_span]:text-subtle">
+      <div className="food-entry-energy col-start-4 row-start-1 [font:600_14px/20px_var(--rounded)] text-right [&_>_span]:block [&_>_span]:[font:400_10.5px/16px_var(--sans)] [&_>_span]:text-subtle max-[761px]:col-start-2 max-[761px]:row-start-2">
         {num(row.kcal)}
         <span>kcal</span>
       </div>
@@ -363,7 +366,7 @@ export function Day({
         <Nutrition view={view} targets={targets} pending={pending} onSync={onSync} />
         <div className={cn(
           "tile-pair grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-3 max-[1181px]:grid-cols-[minmax(0,_1fr)]",
-          "max-[1181px]:h-full max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[381px]:grid-cols-[minmax(0,_1fr)]"
+          "max-[1181px]:h-full max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[381px]:grid-cols-[minmax(0,_1fr)] min-[1182px]:items-stretch"
         )}>
           <section className={cn(
             "tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)]",
@@ -542,7 +545,7 @@ export function Day({
           title={(action.mode === "edit" ? "Edit " : "Delete ") + action.kind}
           onClose={() => setAction(null)}
         >
-          <p className="record-date text-muted-foreground bg-popover py-[11px] px-5.5 border-b [border-bottom-style:solid] border-b-border text-[12px] max-[761px]:py-[11px] max-[761px]:px-4.5">
+          <p className="record-date text-muted-foreground bg-popover py-3 px-6 border-b [border-bottom-style:solid] border-b-border text-[12px] max-[761px]:px-5">
             {parseDay(action.record.day).toLocaleDateString([], {
               weekday: "long",
               month: "long",

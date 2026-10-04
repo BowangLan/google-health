@@ -31,13 +31,13 @@ export function DeleteConfirm({ kind, record, title, onDone, onCancel }: {
   }
 
   return (
-    <div className="confirm [&_.buttons]:[padding:4px_0_0] p-5.5 grid gap-4.5 text-[13px] max-[761px]:p-4.5">
+    <div className="confirm [&_.buttons]:[padding:4px_0_0] p-6 grid gap-5 text-[13px] leading-[1.7] max-[761px]:p-5">
       <div>
         {problem ?? (synced
           ? `Delete “${title}”? The local file goes now. Google Health keeps it until your next push, which will delete it there too.`
           : `Delete “${title}”? It was never sent to Google Health.`)}
       </div>
-      <div className="buttons flex items-center gap-2 [padding:8px_22px_20px] [&_.primary]:[flex:1]">
+      <div className="buttons flex items-center justify-end gap-2.5 pt-2 [&_.primary]:[flex:1]">
         {!problem && (
           <Button variant="secondary" className="danger" type="button" disabled={busy} onClick={remove}>
             Delete

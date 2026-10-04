@@ -168,11 +168,11 @@ export function App() {
       </a>
       <div className="app-shell min-h-dvh">
         <header className={cn(
-          "topbar sticky top-0 z-[30] h-14 flex items-center justify-between py-0 px-5 [background:rgb(9_9_11_/_0.72)]",
+          "topbar sticky top-0 z-[30] h-14 flex items-center justify-between py-0 px-8 border-0 border-b border-solid border-border [background:rgb(9_9_11_/_0.72)]",
           "[-webkit-backdrop-filter:blur(20px)_saturate(170%)] [backdrop-filter:blur(20px)_saturate(170%)]",
           "[&::after]:[content:''] [&::after]:absolute [&::after]:left-0 [&::after]:right-0 [&::after]:[top:100%]",
           "[&::after]:h-4.5 [&::after]:[background:linear-gradient(rgb(9_9_11_/_0.6),_transparent)]",
-          "[&::after]:pointer-events-none max-[761px]:py-0 max-[761px]:px-3.5 max-[521px]:h-25 max-[521px]:items-start",
+          "[&::after]:pointer-events-none max-[761px]:py-0 max-[761px]:px-4 max-[381px]:px-3 max-[521px]:h-25 max-[521px]:items-start",
           "max-[521px]:pt-[11px] max-[521px]:[&::after]:h-3 reduced-transparency:bg-canvas",
           "reduced-transparency:[-webkit-backdrop-filter:none] reduced-transparency:[backdrop-filter:none]"
         )}>

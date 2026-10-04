@@ -1,4 +1,6 @@
+import { cn } from "@/lib/utils";
 import { Field } from "@/components/forms/field";
+import { numberInputClassName } from "@/components/forms/form-styles";
 
 export function TextField({
   label,
@@ -33,7 +35,10 @@ export function TextField({
         disabled={disabled}
         autoFocus={autoFocus}
         required={required}
-        className={scaled ? "text-protein" : undefined}
+        className={cn(
+          type === "number" && numberInputClassName,
+          scaled && "text-protein",
+        )}
         onChange={(event) => onChange(event.target.value)}
       />
     </Field>

@@ -301,7 +301,7 @@ export function FoodComposer({
 
   return (
     <form className="composer [&_.composer-datetime]:pb-0" onSubmit={submit}>
-      <div className={cn(formClassName, "composer-datetime [&_.row2]:items-start [&_input]:h-10 [&_input]:tabular-nums [&_+_.fields]:pt-4 max-[520px]:[&_.row2]:grid-cols-[minmax(0,_1fr)]")}>
+      <div className={cn(formClassName, "composer-datetime [&_.row2]:items-start [&_input]:tabular-nums [&_+_.fields]:pt-4 max-[520px]:[&_.row2]:grid-cols-[minmax(0,_1fr)]")}>
         <div className="row2 grid gap-3 grid-cols-[repeat(2,_minmax(0,_1fr))]">
           <TextField
             label="Date"
@@ -342,11 +342,11 @@ export function FoodComposer({
           </div>
 
           {searchProblem && (
-            <p className="search-error text-[12px] text-warning [padding:0_22px_14px]" role="status">
+            <p className="search-error text-[12px] text-warning [padding:0_24px_14px] max-[761px]:px-5" role="status">
               Past foods couldn’t be loaded. You can still enter a new food.
             </p>
           )}
-          <div className="results [padding:0_10px_14px] max-h-[310px] overflow-y-auto">
+          <div className="results [padding:0_12px_16px] max-[761px]:px-2 max-h-[310px] overflow-y-auto">
             {!keyword && matches.length > 0 && (
               <div className="section-head flex justify-between py-2 px-3 text-subtle text-[11px] font-[560]">
                 <span>Recent</span>
@@ -356,17 +356,17 @@ export function FoodComposer({
               <button
                 key={match.path}
                 type="button"
-                className={`result flex items-center gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-[11px] px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover${index === active ? " active" : ""}`}
+                className={`result flex items-baseline gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-3 px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover${index === active ? " active" : ""}`}
                 onClick={() => choose(match)}
               >
                 <span className="result-name [flex:1] min-w-0 text-[13px] wrap-anywhere [&_svg]:[vertical-align:-2px]">{match.name}</span>
-                <span className="result-kcal [font:600_13px_var(--rounded)]">{num(match.kcal)}</span>
-                <span className="result-when text-subtle text-[11px]">{match.day.slice(5)}</span>
+                <span className="result-kcal min-w-10 text-right tabular-nums [font:600_13px_var(--rounded)]">{num(match.kcal)}</span>
+                <span className="result-when w-9 shrink-0 text-right text-subtle text-[11px] tabular-nums">{match.day.slice(5)}</span>
               </button>
             ))}
             <button
               type="button"
-              className={`result flex items-center gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-[11px] px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover newfood${active === matches.length ? " active" : ""}`}
+              className={`result flex items-baseline gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-3 px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover newfood${active === matches.length ? " active" : ""}`}
               onClick={startNew}
             >
               <span className="result-name [flex:1] min-w-0 text-[13px] wrap-anywhere [&_svg]:[vertical-align:-2px]">
@@ -381,7 +381,7 @@ export function FoodComposer({
         <div className={formClassName}>
           <button
             type="button"
-            className="back-to-search justify-self-start p-0 border-0 bg-none bg-transparent text-muted-foreground text-[12px] underline underline-offset-[3px]"
+            className="back-to-search justify-self-start p-0 border-0 bg-none bg-transparent text-muted-foreground text-[12px] leading-5 underline decoration-[rgb(255_255_255_/_0.2)] underline-offset-4 pointer-hover:[&:hover]:text-foreground"
             onClick={() => {
               setDraft(null);
               setProblem(null);
@@ -436,7 +436,7 @@ export function FoodComposer({
               scaled={Boolean(picked)}
             />
           </div>
-          <details>
+          <details className="border-t [border-top-style:solid] border-t-border pt-3.5 [&_summary]:py-1 [&_summary]:leading-5">
             <summary>Sugar, fibre, sodium, note</summary>
             <div className={formClassName}>
               <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
@@ -477,7 +477,7 @@ export function FoodComposer({
               {problem}
             </div>
           )}
-          <div className="buttons flex items-center gap-2 [padding:8px_22px_20px] [&_.primary]:[flex:1]">
+          <div className="buttons flex items-center gap-2 pt-2 [&_.primary]:[flex:1]">
             <Button variant="primary" type="submit" disabled={saving}>
               {saving ? "Logging…" : "Log food"}
             </Button>

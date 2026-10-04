@@ -21,7 +21,7 @@ function Cell({
   compact: boolean;
   onSelect: (day: string) => void;
 }) {
-  const classes = ["cell relative h-14 border border-solid border-[transparent] rounded-[14px] bg-transparent text-foreground flex flex-col justify-center items-center gap-0.5 p-1 [&.today]:text-energy [&.today]:font-[650] [&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future]:text-subtle [&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:#52525b] pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-[12px]"];
+  const classes = ["cell relative h-14 border border-solid border-[transparent] rounded-[14px] bg-transparent text-foreground flex flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-[650] [&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future:not(.selected)]:text-subtle [&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:#52525b] pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-[12px]"];
   if (day === today) classes.push("today");
   if (day === selected) classes.push("selected");
   if (day > today) classes.push("future");
@@ -54,11 +54,11 @@ function Cell({
       onClick={() => onSelect(day)}
     >
       <span className="cell-day text-[13px]">{Number(day.slice(8))}</span>
+      <span className={cn("cell-kcal h-3 text-[9.5px] leading-3 text-subtle max-[761px]:text-[8px]", !hasFood && "invisible")} aria-hidden={!hasFood}>
+        {hasFood ? num(cell!.kcal) : "No food"}
+      </span>
       {cell && (
         <>
-          <span className={`cell-kcal text-[9.5px] text-subtle max-[761px]:text-[8px] ${hasFood ? "" : " cell-missing hidden"}`}>
-            {hasFood ? num(cell.kcal) : "No food"}
-          </span>
           {!compact && (
             <span className="cell-protein hidden">
               {hasFood ? `P ${num(cell.protein)}` : ""}
@@ -128,18 +128,18 @@ export function Calendar({
       className={`calendar grid gap-1.5${compact ? " compact" : ""}`}
       aria-label={`Calendar, ${view.label}`}
     >
-      <div className="weekdays grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1 [&_span]:text-[10.5px] [&_span]:font-semibold [&_span]:text-subtle [&_span]:text-center">
+      <div className="weekdays pb-1 grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1 [&_span]:text-[10.5px] [&_span]:font-semibold [&_span]:text-subtle [&_span]:text-center">
         {WEEKDAYS.map((name) => (
           <span key={name}>{name}</span>
         ))}
       </div>
-      <div className="grid grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1">
+      <div className="grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1">
         {cells.map((day, index) =>
           day === null ? (
             <div className={cn(
               "cell relative h-14 border border-solid border-[transparent] rounded-[14px] bg-transparent text-foreground flex",
-              "flex-col justify-center items-center gap-0.5 p-1 [&.today]:text-energy [&.today]:font-[650]",
-              "[&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future]:text-subtle",
+              "flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-[650]",
+              "[&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future:not(.selected)]:text-subtle",
               "[&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:#52525b]",
               "pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-[12px] blank"
             )} key={`blank-${index}`} />
