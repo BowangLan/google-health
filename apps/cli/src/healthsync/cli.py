@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import subprocess
 import sys
 from zoneinfo import ZoneInfoNotFoundError
 
-from healthsync import activity, burned, food_commands, workouts
+from healthsync import activity, auth, burned, food_commands, food_import, watch, workouts
 from healthsync import style as S
 from healthsync.common import Clock, number
 from healthsync.config import resolve
@@ -166,7 +167,13 @@ def parser():
     sub = root.add_subparsers(dest="kind", required=True)
     for kind in ("food", "weight"):
         group = command(sub, kind, common, help=f"manage {kind} records")
-        record_commands(group.add_subparsers(dest="cmd", required=True), common, kind)
+        kind_sub = group.add_subparsers(dest="cmd", required=True)
+        record_commands(kind_sub, common, kind)
+        if kind == "food":
+            food_import.add_arguments(command(
+                kind_sub, "import", common,
+                help="import a food-export CSV as local files; never pushes",
+            ))
     group = command(sub, "cal", common, help="daily calories burned (read-only)")
     burned_sub = group.add_subparsers(dest="cmd", required=True)
     for name, description in (
@@ -203,6 +210,10 @@ def parser():
             sp = command(kind_sub, name, common, help=action)
             sp.add_argument("--days", type=positive, default=7)
     shared_commands(sub, common, aggregate=True)
+    auth.add_arguments(command(sub, "auth", common, help="log in, or show login status or scopes"))
+    watch.add_arguments(command(sub, "watch", common, help="pull everything on an interval"))
+    web = command(sub, "web", common, help="serve the local web app and its API")
+    web.add_argument("--port", type=int, default=8787)
     return root
 
 
@@ -326,6 +337,17 @@ def run_workouts(args):
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.kind == "web":
+        from healthsync import web
+
+        return web.serve(args.port)
+    if args.kind in ("auth", "watch") or (args.kind == "food" and args.cmd == "import"):
+        tool = food_import if args.kind == "food" else auth if args.kind == "auth" else watch
+        try:
+            return tool.run(args)
+        except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+            print(S.red(f"hsync: {exc}"), file=sys.stderr)
+            return 1
     if args.kind in ("cal", "workouts", "run") or args.kind in activity.METRICS:
         try:
             if args.kind in ("workouts", "run"):

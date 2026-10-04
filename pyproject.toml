@@ -1,0 +1,15 @@
+# uv workspace root. `uv run hsync ...` works from anywhere in the repo.
+[project]
+name = "google-health"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["healthsync"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+healthsync = { workspace = true }
+
+[tool.uv.workspace]
+members = ["apps/cli"]

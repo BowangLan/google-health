@@ -186,9 +186,10 @@ finish() {
 
 TOTAL_STAGES=9
 
-# Keep every captured value next to the wizard itself, not in the parent repo.
-ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.env"
-GHEALTH_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/google-health-cli"
+# Captured values go in the repo root's untracked .env.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$ROOT/.env"
+GHEALTH_SRC="$ROOT/vendor/google-health-cli"
 
 banner "Google Health API setup"
 

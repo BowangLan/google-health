@@ -1,0 +1,13 @@
+[project]
+name = "healthsync"
+version = "0.1.0"
+description = "Sync editable food and weight files with Google Health."
+requires-python = ">=3.11"
+dependencies = ["pyyaml>=6"]
+
+[project.scripts]
+hsync = "healthsync.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"

@@ -2,13 +2,13 @@
 
 This repo logs food and weight to Google Health using editable local files.
 A request to log a record authorizes creating and syncing that record immediately.
-Use the local CLI directly.
+Use the local CLI directly: `uv run hsync` from anywhere in the repo.
 
 ## Routine entries
 
 ```sh
-./hsync food add anytime "Shake Shack Single ShackBurger, lettuce wrap" 330 -p 23 -c 3 -f 25 -u burger
-./hsync weight add 175 --unit lb
+uv run hsync food add anytime "Shake Shack Single ShackBurger, lettuce wrap" 330 -p 23 -c 3 -f 25 -u burger
+uv run hsync weight add 175 --unit lb
 ```
 
 - Food values are totals for the portion eaten; preserve the user's numbers.
@@ -33,10 +33,10 @@ Use the local CLI directly.
 
 For a nutrient without a flag:
 
-1. Create the food with `./hsync food add ... --no-push`.
+1. Create the food with `uv run hsync food add ... --no-push`.
 2. Edit only the resulting file, adding gram values under `nutrients`.
-3. Run `./hsync food status`. If only the requested entry is pending, run
-   `./hsync food push`. Push acts on every pending change in that collection,
+3. Run `uv run hsync food status`. If only the requested entry is pending, run
+   `uv run hsync food push`. Push acts on every pending change in that collection,
    including deletions. If anything else is pending, stop and report what else
    would go out rather than pushing it.
 
@@ -48,7 +48,7 @@ Markdown bodies are private; weight `remote_notes` is sent to Google Health.
 
 Calories burned, steps, distance, heart rate, workouts, and run distance are read
 from Google Health and never pushed. Use
-`./hsync <cal|steps|distance|hr|workouts|run> pull --days N` for current numbers,
+`uv run hsync <cal|steps|distance|hr|workouts|run> pull --days N` for current numbers,
 or `list` for what was last saved. Heart rate is one row per local hour (average,
 minimum, and maximum bpm), not per day. Only Fitbit data counts; Apple Watch
 records are skipped. Run distance includes treadmill sessions.
@@ -70,6 +70,7 @@ Do not pass `--force` to get past it; report the conflict and let the user pick
 which version to keep.
 
 For sync conflicts, recovery, setup, authorization, or tooling changes, consult
-the relevant section of `README.md`. Health logs and credentials stay untracked.
+the relevant section of `README.md`. Its Development section describes the
+monorepo layout (`apps/cli` Python, `apps/web` React) and the `bun` scripts. Health logs and credentials stay untracked.
 
 Edit these instructions in `CLAUDE.md`; `AGENTS.md` is a symlink to this file.

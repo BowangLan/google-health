@@ -3,7 +3,7 @@
 Reads and writes are deliberately split. Reading imports the ``healthsync``
 package and scans the collection directly, so a page can show records rather
 than captured terminal text. Writing never does: every change is handed to the
-real ``./hsync`` process, which keeps locking, journalling, recovery, and
+real ``hsync`` process, which keeps locking, journalling, recovery, and
 conflict policy in the one place that already implements them.
 
 :data:`SPEC` describes every command, option, and positional argument that
@@ -34,15 +34,14 @@ from pathlib import Path
 
 from healthsync import burned, sync_report
 from healthsync.common import Clock, number, tidy_numbers
-from healthsync.config import resolve
+from healthsync.config import ROOT, resolve
 from healthsync.records.food import Food
 from healthsync.records.weight import POUND_KG, Weight
 from healthsync.store import Store, read_entry, write_entry
 
-ROOT = Path(__file__).resolve().parent.parent
-# The built React app. `pnpm build` in web/ produces it; during development
-# `pnpm dev` serves the UI itself and proxies /api back here.
-STATIC = ROOT / "web" / "dist"
+# The built React app. `bun run build` produces it; during development
+# `bun dev` serves the UI itself and proxies /api back here.
+STATIC = ROOT / "apps" / "web" / "dist"
 TIMEOUT = 180
 
 MEALS = ("breakfast", "lunch", "dinner", "snack", "anytime")
@@ -292,7 +291,7 @@ def argv(payload):
 def run(arguments):
     """Run the CLI without a terminal, so its prompts take the written path."""
     environment = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
-    command = [str(ROOT / "hsync"), *arguments]
+    command = [sys.executable, "-m", "healthsync", *arguments]
     # The CLI takes each collection's lock non-blockingly for the whole run.
     # Serialising runs here means a sync in progress delays a new entry by a
     # few seconds instead of failing it with a lock error.
@@ -313,7 +312,7 @@ def run(arguments):
 
 
 def preview(arguments):
-    return "./hsync " + " ".join(shlex.quote(part) for part in arguments)
+    return "uv run hsync " + " ".join(shlex.quote(part) for part in arguments)
 
 
 # Syncing ------------------------------------------------------------------
@@ -1207,13 +1206,13 @@ class Handler(BaseHTTPRequestHandler):
     }
 
     def static(self, path):
-        """Serve the built app, refusing any path that escapes web/dist."""
+        """Serve the built app, refusing any path that escapes apps/web/dist."""
         if not STATIC.is_dir():
             return self.send(
                 503,
                 "<h1>The web app is not built</h1>"
-                "<p>Run <code>pnpm install &amp;&amp; pnpm build</code> in "
-                "<code>web/</code>, or <code>pnpm dev</code> for hot reload.</p>",
+                "<p>Run <code>bun install &amp;&amp; bun run build</code> at the repo "
+                "root, or <code>bun dev</code> for hot reload.</p>",
                 "text/html; charset=utf-8",
             )
         # Decode before resolving, so an encoded traversal is caught by the
@@ -1286,13 +1285,11 @@ class Handler(BaseHTTPRequestHandler):
         self.json(200, result)
 
 
-def main(argument_list=None):
-    arguments = sys.argv[1:] if argument_list is None else argument_list
-    port = int(arguments[0]) if arguments else 8787
+def serve(port=8787):
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"hsync web on http://127.0.0.1:{port}  (ctrl-c to stop)")
     if not STATIC.is_dir():
-        print("  the web app is not built: run 'pnpm install && pnpm build' in web/")
+        print("  the web app is not built: run 'bun install && bun run build'")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

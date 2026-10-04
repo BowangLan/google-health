@@ -1,0 +1,8 @@
+{
+  "name": "@health/cli",
+  "private": true,
+  "scripts": {
+    "dev": "PYTHONUNBUFFERED=1 uv run hsync web",
+    "test": "uv run python -m unittest discover -s tests"
+  }
+}

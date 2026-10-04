@@ -1,4 +1,0 @@
-# esbuild's install script only verifies a binary that its platform package
-# (@esbuild/darwin-arm64) already ships, so it is declined rather than run.
-allowBuilds:
-  esbuild: false

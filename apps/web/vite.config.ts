@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// `pnpm dev` serves the UI with hot reload and forwards the API to the Python
+// `bun dev` serves the UI with hot reload and forwards the API to the Python
 // server, which is the only thing allowed to touch the record files.
 export default defineConfig({
   plugins: [react(), tailwindcss()],

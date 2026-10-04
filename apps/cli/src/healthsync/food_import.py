@@ -1,17 +1,11 @@
-#!/usr/bin/env -S uv run --quiet --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pyyaml>=6"]
-# ///
 """Import food-export CSV rows locally; never contacts Google Health.
 
-Usage: ./import-food-csv path/to/food-log.csv [--dry-run] [--data-dir DIR]
+Usage: hsync food import path/to/food-log.csv [--dry-run] [--data-dir DIR]
 Notes are ignored. Repeated rows are preserved as separate servings/records.
 The private csv_import_key field identifies rows on subsequent imports. Keep
-that field to avoid duplicates if you rerun this script after editing files.
+that field to avoid duplicates if you rerun the import after editing files.
 """
 
-import argparse
 from collections import Counter
 import csv
 import datetime as dt
@@ -19,7 +13,6 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from pathlib import Path
-import sys
 from zoneinfo import ZoneInfo
 
 from healthsync.config import resolve
@@ -89,13 +82,12 @@ def read_csv(path, record, timezone):
     return entries
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("csv", type=Path)
-    parser.add_argument("--config")
-    parser.add_argument("--data-dir")
-    parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args()
+def add_arguments(parser):
+    parser.add_argument("csv", type=Path, help="food-export CSV file")
+    parser.add_argument("--dry-run", action="store_true", help="report without writing files")
+
+
+def run(args):
     config = resolve(args, "food")
     record = Food()
     # Validate the entire input before writing any records.
@@ -132,10 +124,3 @@ def main():
         print("Local files only; nothing pushed.")
     return 0
 
-
-if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except (ValueError, OSError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        raise SystemExit(1)

@@ -7,8 +7,9 @@ from zoneinfo import ZoneInfo
 
 import tomllib
 
-HERE = Path(__file__).resolve().parent.parent
-CONFIG = HERE / "config.toml"
+# Repository root: src/healthsync/ sits in apps/cli/, installed editable by uv.
+ROOT = Path(__file__).resolve().parents[4]
+CONFIG = ROOT / "config.toml"
 KEYS = {"data_dir", "ghealth", "timezone", "weight_unit"}
 # Index names predate the shared data directory; existing indexes keep them.
 INDEXES = {"food": ".fsync-index.json", "weight": ".hsync-index.json"}
@@ -38,7 +39,7 @@ def resolve(args, kind):
             raise ValueError(f"{source}: unknown configuration key {key!r}")
         if not isinstance(value, str):
             raise TypeError(f"{source}: {key} must be a string")
-    base = source.parent if source else HERE
+    base = source.parent if source else ROOT
 
     def path(key, default):
         return (
@@ -51,7 +52,7 @@ def resolve(args, kind):
     data = (
         Path(override).expanduser().resolve()
         if override
-        else path("data_dir", HERE / "data")
+        else path("data_dir", ROOT / "data")
     )
     directory = data / kind
     timezone = cfg.get("timezone", "America/Los_Angeles")
@@ -62,7 +63,7 @@ def resolve(args, kind):
     ghealth = (
         Path(os.environ["GHEALTH"]).expanduser().resolve()
         if os.getenv("GHEALTH")
-        else path("ghealth", HERE / "google-health-cli/ghealth")
+        else path("ghealth", ROOT / "vendor/google-health-cli/ghealth")
     )
     return Config(
         kind, directory, directory / INDEXES[kind], ghealth, timezone, unit, source

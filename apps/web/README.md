@@ -1,7 +1,7 @@
 # Health web app
 
-React + TypeScript on Vite. The Python server in `healthsync/web.py` reads the
-local records and runs `./hsync` for commands that reach Google Health.
+React + TypeScript on Vite. The Python server in `apps/cli/src/healthsync/web.py` reads the
+local records and runs `hsync` for commands that reach Google Health.
 
 ## UI component setup
 
@@ -45,23 +45,22 @@ pnpm dlx shadcn@latest init
 pnpm add framer-motion clsx tailwind-merge
 ```
 
-This repository already includes that configuration; run `pnpm install` to
+This repository already includes that configuration; run `bun install` to
 restore its dependencies. See the official [Tailwind Vite setup](https://tailwindcss.com/docs/installation/using-vite),
 [Preflight import options](https://tailwindcss.com/docs/preflight), and
 [shadcn Vite setup](https://ui.shadcn.com/docs/installation/vite).
 
 ## Running
 
-From `web/`:
+From the repository root:
 
 ```sh
-pnpm install
-pnpm build      # writes dist/, which ./hweb serves
+bun install
+bun start        # builds dist/, then `uv run hsync web` serves it
 ```
 
-Then run `./hweb` from the repository root and open the URL it prints.
-For UI development, keep that API server running and run `pnpm dev` from `web/`.
-Vite proxies `/api` to port 8787. `pnpm typecheck` checks TypeScript.
+Open the URL it prints. For UI development, `bun dev` runs the API server and
+Vite together; Vite proxies `/api` to port 8787. `bun run typecheck` checks TypeScript.
 
 ## Workflows and state
 
@@ -139,14 +138,14 @@ Editing and deleting call `/api/record`; the server takes the collection lock
 and refuses changes the sync engine cannot reconcile. Those local changes wait
 in the Google Health panel for an explicit push. Syncing calls `/api/sync`,
 which runs the real `sync` command and returns its output both raw and parsed
-by `healthsync/sync_report.py`. The server runs one CLI process at a time, so
+by `apps/cli/src/healthsync/sync_report.py`. The server runs one CLI process at a time, so
 a sync started by regaining focus delays a new entry by a few seconds rather
 than failing it on the collection lock. The UI never passes `--force`.
 
 ## Browser checks
 
 ```sh
-pnpm test:e2e
+bun run test:e2e
 ```
 
 The Playwright suite requires Google Chrome installed locally. It builds and

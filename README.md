@@ -26,19 +26,19 @@ bodies hold private notes that stay on your machine.
 ### Prerequisites
 
 - macOS for the setup workflow documented here.
-- `uv` to run the Python entrypoints (Python 3.11+ and PyYAML are declared in the scripts).
+- `uv` for the Python CLI (it installs Python 3.11+ and PyYAML on first run).
 - Git, Go, and `jq` for the Google CLI setup. The wizard can install Go through Homebrew.
 - A Google account and a Google Cloud project with the Google Health API enabled;
   the wizard walks through project creation and authorization.
-- Node.js and pnpm if you want the optional web app.
+- Bun if you want the optional web app.
 
 ### Setup and authorization
 
 From a clone of this repository, run:
 
 ```sh
-./setup-wizard.sh
-./auth status
+scripts/setup.sh
+uv run hsync auth status
 ```
 
 The wizard builds Google's `ghealth` CLI, guides you through Cloud Console, and
@@ -46,13 +46,13 @@ starts login. The OAuth client must be a **Desktop app** because `ghealth` uses 
 loopback redirect. Project settings are saved in `.env`; credentials live under
 `~/.config/ghealth/`. `hsync` borrows and refreshes that token.
 
-No Python environment activation is needed. Keep the `healthsync/` package
-alongside the entrypoint scripts.
+No Python environment activation is needed: `uv run hsync` works from anywhere
+in the repository and installs the package on first use.
 
 For an existing food-only installation, add the health metrics read and write
 scopes in Cloud Console's OAuth data-access page, keep the nutrition scopes,
-and authenticate again with `./auth`. `./auth login` also starts login;
-`./auth scopes` lists granted scopes. Missing scopes produce authorization errors.
+and authenticate again with `uv run hsync auth`. `hsync auth login` also starts login;
+`hsync auth scopes` lists granted scopes. Missing scopes produce authorization errors.
 
 See the [original setup research](docs/google-health-food-logging.html) for the
 OAuth publishing guidance used by the wizard, including Testing-mode token
@@ -63,15 +63,15 @@ expiry and personal-use verification limitations.
 Pull existing records, then inspect the local collections:
 
 ```sh
-./hsync pull --all --days 30
-./hsync status --all
+uv run hsync pull --all --days 30
+uv run hsync status --all
 ```
 
 Log food or weight:
 
 ```sh
-./hsync food add anytime "Chicken burrito" 650 -c 72 -f 24 -p 38 --note "Nutrition estimated"
-./hsync weight add 175 --unit lb
+uv run hsync food add anytime "Chicken burrito" 650 -c 72 -f 24 -p 38 --note "Nutrition estimated"
+uv run hsync weight add 175 --unit lb
 ```
 
 `add` saves a Markdown file and immediately pushes **only that new record**.
@@ -84,17 +84,17 @@ creating a file or writing remotely. The food values above are illustrative esti
 
 ```sh
 # Log food now (illustrative nutrition estimates for the whole portion).
-./hsync food add anytime "Chicken burrito" 650 -c 72 -f 24 -p 38 --note "Nutrition estimated"
+uv run hsync food add anytime "Chicken burrito" 650 -c 72 -f 24 -p 38 --note "Nutrition estimated"
 
 # Include sodium and a specific date and time.
-./hsync food add lunch "Soup" 180 -c 20 -f 8 -p 7 --sodium-mg 480 --date 2026-09-20 --at 12:30 --note "Nutrition estimated"
+uv run hsync food add lunch "Soup" 180 -c 20 -f 8 -p 7 --sodium-mg 480 --date 2026-09-20 --at 12:30 --note "Nutrition estimated"
 
 # Save locally for review before syncing.
-./hsync food add dinner "Steak bowl" 580 -c 50 -f 24 -p 41 --no-push --note "Nutrition estimated"
+uv run hsync food add dinner "Steak bowl" 580 -c 50 -f 24 -p 41 --no-push --note "Nutrition estimated"
 
 # Reuse a locally saved food at a different serving amount.
-./hsync food clone "Chicken burrito" --index 1 --amount 2
-./hsync food total yesterday
+uv run hsync food clone "Chicken burrito" --index 1 --amount 2
+uv run hsync food total yesterday
 ```
 
 Meals are `breakfast`, `lunch`, `dinner`, `snack`, and `anytime`; use `anytime`
@@ -118,10 +118,10 @@ recompute nutrition for foods that retain a catalog reference.
 ### Weight
 
 ```sh
-./hsync weight add 79.4 --unit kg
-./hsync weight add 175 --unit lb --date 2026-09-23 --at 08:00
-./hsync weight add 79.4 --unit kg --note "Private context" --remote-note "Morning reading"
-./hsync weight list --days 90 --unit lb
+uv run hsync weight add 79.4 --unit kg
+uv run hsync weight add 175 --unit lb --date 2026-09-23 --at 08:00
+uv run hsync weight add 79.4 --unit kg --note "Private context" --remote-note "Morning reading"
+uv run hsync weight list --days 90 --unit lb
 ```
 
 Pass `--unit kg` or `--unit lb` explicitly. If omitted, the CLI uses the configured
@@ -141,13 +141,13 @@ Timestamps authored by hand must include an offset; quote them in YAML.
 ### Activity (read-only)
 
 ```sh
-./hsync cal pull               # calories burned, last 7 days
-./hsync steps pull --days 30
-./hsync distance list
-./hsync hr pull                # heart rate, today by hour
-./hsync hr list --days 2
-./hsync workouts pull --days 30
-./hsync run list               # run distance per day, from saved workouts
+uv run hsync cal pull               # calories burned, last 7 days
+uv run hsync steps pull --days 30
+uv run hsync distance list
+uv run hsync hr pull                # heart rate, today by hour
+uv run hsync hr list --days 2
+uv run hsync workouts pull --days 30
+uv run hsync run list               # run distance per day, from saved workouts
 ```
 
 These commands read data that Google Health computes from your devices; nothing
@@ -185,7 +185,7 @@ local day it started. `run` counts outdoor runs (`RUNNING`) and treadmill sessio
 The current day and hour are still accumulating, so each row records when it was
 fetched; pull again for the latest numbers. Requests are split to fit the API's
 range limits (14 days for calories, 90 for steps and distance, one day of heart rate).
-These commands need the `activity_and_fitness.readonly` scope, which `./auth` requests.
+These commands need the `activity_and_fitness.readonly` scope, which `hsync auth` requests.
 
 ## Web app
 
@@ -195,25 +195,24 @@ trends, and sync controls. It uses the same local records and sync engine as the
 Build and launch it from the repository root:
 
 ```sh
-pnpm --dir web install
-pnpm --dir web build
-./hweb
+bun install
+bun start        # builds apps/web, then runs `uv run hsync web`
 ```
 
 Open the printed URL (default: `http://127.0.0.1:8787`). New entries sync
 immediately. The app pulls from Google Health whenever the
 window regains focus, so records logged elsewhere appear on their own; edits
 and deletions wait in the Google Health panel until you push them. See the
-[web app guide](web/README.md) for workflows and UI development.
+[web app guide](apps/web/README.md) for workflows and UI development.
 
 ## Commands
 
 Edit a record's Markdown frontmatter, then review and send the changes:
 
 ```sh
-./hsync food status
-./hsync food push --dry-run
-./hsync food push
+uv run hsync food status
+uv run hsync food push --dry-run
+uv run hsync food push
 ```
 
 `push` sends **all pending changes in that collection**, including deletions.
@@ -246,6 +245,10 @@ At the prompt, use `1`/`pull`, `2`/`push`, or `3`/`both`; Enter cancels.
 Invalid choices ask again. `--yes` confirms remote deletions only; it does not
 choose a sync action. For a preview in a terminal, use `sync --dry-run` (or `-n`).
 
+`uv run hsync food import FILE.csv [--dry-run]` turns a food-export CSV into local
+files without contacting Google Health; push them afterwards. Rerunning it skips
+rows already imported.
+
 `--limit` is a list page size, not a total-record cap. Pagination failure aborts
 the read rather than treating an incomplete result as remote deletions.
 
@@ -254,11 +257,11 @@ saved baseline; it does not contact Google. `sync` separately reports how many
 records match Google Health, differ, are missing remotely, or exist only remotely.
 That comparison describes the state before any selected pull/push actions.
 
-To keep everything current, `./hwatch` runs `hsync pull --all` every 300 seconds
+To keep everything current, `uv run hsync watch` runs `hsync pull --all` every 300 seconds
 (5 minutes) until stopped, then pulls calories burned, steps, distance, and workouts
-for the last 7 days and heart rate for the last 2. A leading number sets the
-interval in seconds; remaining arguments go to the food and weight pull, for
-example `./hwatch 300 --days 30`. It never pushes, and a failed pull is reported
+for the last 7 days and heart rate for the last 2. `--interval` sets the
+interval in seconds and `--days` the food and weight window, for
+example `uv run hsync watch --interval 300 --days 30`. It never pushes, and a failed pull is reported
 and retried on the next interval.
 
 ## Configuration
@@ -456,52 +459,67 @@ frontmatter, but cannot recover private notes or entries never pushed.
 
 ## Development
 
-The sync engine is Python; the web app uses React, TypeScript, and Vite.
+This is a Turborepo monorepo. Each app lives in `apps/`; shared packages will go
+in `packages/`. Bun manages the JavaScript workspaces and uv the Python one.
+
+```
+apps/cli/       Python: the hsync CLI and the local API server (healthsync package)
+apps/web/       React + Vite web app
+scripts/        setup.sh, the Google Cloud and ghealth setup wizard
+vendor/         Google's ghealth CLI, cloned and built by setup.sh (untracked)
+data/           your food, weight, and activity records (untracked)
+docs/           historical research
+```
+
+From the root, `bun dev` runs the API server and Vite with hot reload,
+`bun run build` builds the web app, `bun run test` runs the Python tests, and
+`bun run typecheck` checks TypeScript. Turbo runs each task in every app that
+defines it.
+
+Paths below are inside `apps/cli/src/`.
 
 | Path | Responsibility |
 | --- | --- |
-| [`healthsync/cli.py`](healthsync/cli.py) | Argument parsing and command dispatch |
-| [`healthsync/config.py`](healthsync/config.py) | Per-collection configuration |
-| [`healthsync/store.py`](healthsync/store.py) | Markdown, indexes, locks, and recovery journals |
-| [`healthsync/sync.py`](healthsync/sync.py) | Conflict detection and reconciliation |
-| [`healthsync/google_health.py`](healthsync/google_health.py) | OAuth and Google Health API calls |
-| [`healthsync/records/`](healthsync/records/) | Food and weight schemas |
-| [`healthsync/food_commands.py`](healthsync/food_commands.py) | Food logging, cloning, and totals |
-| [`healthsync/burned.py`](healthsync/burned.py) | Read-only daily calories burned |
-| [`healthsync/activity.py`](healthsync/activity.py) | Read-only steps, distance, and hourly heart rate |
-| [`healthsync/workouts.py`](healthsync/workouts.py) | Read-only Fitbit workouts and run distance |
-| [`healthsync/web.py`](healthsync/web.py) | Local web server and API |
-| [`healthsync/sync_report.py`](healthsync/sync_report.py) | Turns `sync` output into the web app's structured report |
-| [`web/`](web/) | React interface and browser tests |
+| [`healthsync/cli.py`](apps/cli/src/healthsync/cli.py) | Argument parsing and command dispatch |
+| [`healthsync/config.py`](apps/cli/src/healthsync/config.py) | Per-collection configuration |
+| [`healthsync/store.py`](apps/cli/src/healthsync/store.py) | Markdown, indexes, locks, and recovery journals |
+| [`healthsync/sync.py`](apps/cli/src/healthsync/sync.py) | Conflict detection and reconciliation |
+| [`healthsync/google_health.py`](apps/cli/src/healthsync/google_health.py) | OAuth and Google Health API calls |
+| [`healthsync/records/`](apps/cli/src/healthsync/records/) | Food and weight schemas |
+| [`healthsync/food_commands.py`](apps/cli/src/healthsync/food_commands.py) | Food logging, cloning, and totals |
+| [`healthsync/burned.py`](apps/cli/src/healthsync/burned.py) | Read-only daily calories burned |
+| [`healthsync/activity.py`](apps/cli/src/healthsync/activity.py) | Read-only steps, distance, and hourly heart rate |
+| [`healthsync/workouts.py`](apps/cli/src/healthsync/workouts.py) | Read-only Fitbit workouts and run distance |
+| [`healthsync/web.py`](apps/cli/src/healthsync/web.py) | Local web server and API |
+| [`healthsync/sync_report.py`](apps/cli/src/healthsync/sync_report.py) | Turns `sync` output into the web app's structured report |
 
 ### Tests
 
 Run the Python tests with temporary files and a fake remote:
 
 ```sh
-uv run --with pyyaml python -m unittest discover -s tests -v
+bun run test
 ```
 
 Check the frontend and run its browser suite (requires Google Chrome):
 
 ```sh
-pnpm --dir web typecheck
-pnpm --dir web test:e2e
+bun run typecheck
+bun run test:e2e
 ```
 
 Browser tests build an isolated preview and intercept API requests with fixtures.
 Neither test suite writes to live Google Health records.
 
-For UI development, run `./hweb` and, in another terminal,
-`pnpm --dir web dev`. Vite proxies API requests to port 8787.
+For UI development, run `bun dev`. Vite proxies API requests to port 8787.
 
 ## Documentation
 
-- [Web app guide](web/README.md): workflows, UI architecture, and browser checks.
+- [Web app guide](apps/web/README.md): workflows, UI architecture, and browser checks.
 - [Configuration template](config.example.toml): available settings.
 - Historical research: [food API and setup](docs/google-health-food-logging.html),
   [original fsync flows](docs/fsync-flows.html), and
   [Google CLI survey](docs/google-health-cli.html).
 
-For all CLI options, run `./hsync --help` or a command's help, such as
-`./hsync food add --help`.
+For all CLI options, run `uv run hsync --help` or a command's help, such as
+`uv run hsync food add --help`.
