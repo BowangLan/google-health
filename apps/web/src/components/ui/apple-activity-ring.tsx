@@ -130,22 +130,22 @@ function DetailedActivityInfo({ activities }: { activities: ActivityData[] }) {
 
 export function AppleActivityCard({ title = "Activity Rings", className, activities: data = activities,
   ringSize = 200, strokeWidth = 16, compact = false, children }: {
-  title?: string | null;
-  className?: string;
-  activities?: ActivityData[];
-  ringSize?: number;
-  strokeWidth?: number;
-  compact?: boolean;
-  children?: ReactNode;
-}) {
+    title?: string | null;
+    className?: string;
+    activities?: ActivityData[];
+    ringSize?: number;
+    strokeWidth?: number;
+    compact?: boolean;
+    children?: ReactNode;
+  }) {
   const keyboard = useSyncExternalStore(subscribeInputMode,
     () => document.documentElement.dataset.input === "keyboard", () => false);
   const reduceMotion = Boolean(useReducedMotion()) || keyboard;
   return (
-    <div className={cn(compact ? "rings-body" : "relative mx-auto w-full max-w-3xl rounded-3xl p-8 text-zinc-900 dark:text-white", className)}>
+    <div className={cn(compact ? "rings-body grid grid-cols-[132px_minmax(0,_1fr)] items-center gap-6 [padding:14px_18px_6px] max-[761px]:grid-cols-[112px_minmax(0,_1fr)] max-[761px]:gap-4.5 max-[381px]:grid-cols-[minmax(0,_1fr)] max-[381px]:justify-items-center" : "relative mx-auto w-full max-w-3xl rounded-3xl p-8 text-zinc-900 dark:text-white", className)}>
       {title && <h2 className="mb-8 text-center text-2xl font-medium">{title}</h2>}
       <div className={compact ? "contents" : "flex flex-col items-center justify-center gap-8 sm:flex-row"}>
-        <div className="rings relative shrink-0" style={{ "--activity-ring-size": `${ringSize}px`, maxWidth: "100%" } as CSSProperties}>
+        <div className="rings w-[var(--activity-ring-size)] [aspect-ratio:1] max-[761px]:w-28 max-[761px]:h-28 relative shrink-0" style={{ "--activity-ring-size": `${ringSize}px`, maxWidth: "100%" } as CSSProperties}>
           {data.map((activity, index) => <CircleProgress key={activity.label} data={activity} index={index}
             ringSize={ringSize} strokeWidth={strokeWidth} reduceMotion={reduceMotion} />)}
         </div>

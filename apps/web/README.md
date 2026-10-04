@@ -5,18 +5,20 @@ local records and runs `hsync` for commands that reach Google Health.
 
 ## UI component setup
 
-TypeScript was already configured. Tailwind CSS 4 is installed through
-`@tailwindcss/vite`; `src/styles.css` imports its theme and utilities without
-Preflight so the dashboard keeps its existing base styles. `components.json`
-provides the shadcn CLI configuration, and both TypeScript and Vite resolve
-`@/` to `src/`. The `cn` helper in `src/lib/utils.ts` combines `clsx` and
-`tailwind-merge`.
+Tailwind CSS v4 runs through the existing `@tailwindcss/vite` plugin. Component
+layouts, typography, SVG chart styling, interactive states, and responsive
+changes use utility classes. `src/styles.css` defines the palette with
+`@theme inline`, element defaults, animation keyframes, and accessibility
+preferences. Preflight remains disabled to preserve native controls and the
+existing dashboard appearance. Pointer hover styles apply only to a fine
+pointer that supports hovering.
 
-Application components live in `src/components`. Reusable UI components belong
-in `src/components/ui`, the `/components/ui` path relative to the source root.
-This folder keeps reusable primitives separate from dashboard-specific code
-and gives the shadcn CLI and copied components a consistent import location.
-Global styles remain in `src/styles.css`.
+`components.json` retains the shadcn aliases. Both TypeScript and Vite resolve
+`@/` to `src/`. Import modules directly; there are no barrel files. The `cn`
+helper in `src/lib/utils.ts` combines `clsx` and `tailwind-merge`. Shared
+capsule controls use `src/components/button.tsx`; shared fields and form layout
+utilities live in `src/components/forms`. CLI-owned or supplied UI primitives
+remain in `src/components/ui`.
 
 The nutrition tile uses `src/components/ui/apple-activity-ring.tsx`, adapted
 from the MIT-licensed Kokonut UI component supplied for this app. Its
@@ -114,24 +116,59 @@ Apple's copyright, so they are kept out of the repository.
 
 ## Code structure
 
-- `src/lib/types.ts` describes the server's JSON responses.
-- `src/lib/api.ts` is the only module that calls `fetch`.
-- `src/lib/navigation.ts` and `src/hooks/useRoute.ts` parse and manage routes.
-- `src/hooks/useHealth.ts` holds global metadata, targets, and the local sync
-  overview.
-- `src/hooks/useSync.ts` runs one sync at a time, automatically on
-  focus, and keeps the last run. `src/components/Sync.tsx` derives the status
-  summary and the sync sheet from the overview plus that last run.
-  `Island.tsx` renders that summary and the notices.
-- `src/hooks/useJournal.ts` fetches the selected day's records and rejects stale
-  responses after navigation. `Dashboard.tsx` owns the day header, logging
-  dialogs and shortcuts. `Day.tsx` draws the day's tiles and food log.
-- `Trends.tsx` owns series loading, the range control, and chart hover. Chart
-  clicks are reported to the dashboard, which selects the day.
-- `src/hooks/useActivity.ts` holds the command log shown in the Activity dialog.
-- `src/lib/series.ts` holds the centred seven-day mean, line-break rules, and
-  average denominators. `src/lib/scale.ts` aligns dates across the chart stack.
-- `src/lib/icons.ts` is the only module importing the icon library.
+The web app follows the `react-project-structure` skill: kebab-case filenames,
+named component exports, direct imports, and code colocated with its domain.
+Only the folders needed by this app are present.
+
+```text
+src/
+  main.tsx
+  app/
+    app.tsx                       app shell and composition
+    routes/dashboard.tsx          composes journal and trends
+    components/shortcut-sheet.tsx
+  features/
+    journal/
+      components/                 day, calendar and record forms
+      hooks/use-journal.ts
+    trends/
+      components/                 summary and charts
+      lib/                        series calculations and date scales
+    sync/
+      components/                 island and sync panel
+      hooks/                      sync execution and relative time
+      lib/status.ts               counts, notices and status summaries
+    activity/
+      components/activity-panel.tsx
+      hooks/use-activity.ts
+    settings/
+      components/settings-popover.tsx
+  components/
+    button.tsx  dialog.tsx         shared controls
+    forms/                        field, text field and segmented control
+    ui/                           supplied UI primitives
+  hooks/                          shared account metadata and routing
+  lib/                            API contract, formatting and shared helpers
+  styles.css                      Tailwind theme and global defaults
+```
+
+Shared modules do not import domains. A domain imports shared modules and its
+own files; it never imports another domain. The app shell and dashboard route
+compose the domains. `src/lib/types.ts` holds the server's JSON contract, and
+`src/lib/api.ts` remains the only module that calls `fetch`.
+
+`src/hooks/use-health.ts` holds metadata, targets, and the local sync overview.
+`src/hooks/use-route.ts` manages the URL. The journal hook fetches the selected
+day and rejects stale responses; `day.tsx` draws its tiles and food log.
+`trends-section.tsx` owns series loading, range selection, and chart hover.
+The trend helpers retain the centred seven-day mean, missing-data rules, and
+average denominators; chart clicks select the dashboard's day.
+
+The sync hook runs one operation at a time and pulls automatically on focus.
+`status.ts` derives messages independently of the panel. Activity holds the
+command log and notifications; its notification type is part of the shared
+contract so sync does not depend on the activity domain. `src/lib/icons.ts`
+continues to centralize icon exports.
 
 Adding a record runs a CLI command and can sync that new record immediately.
 Editing and deleting call `/api/record`; the server takes the collection lock

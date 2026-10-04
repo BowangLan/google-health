@@ -278,3 +278,8 @@ export interface SyncResult extends RunResult {
   /** The local state right after the run, so no second request is needed. */
   overview: Overview;
 }
+
+export interface Toast {
+  message: string;
+  bad: boolean;
+}

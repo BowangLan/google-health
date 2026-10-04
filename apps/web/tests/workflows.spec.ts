@@ -376,6 +376,8 @@ test("dark-only styling fits every width from desktop to a small phone", async (
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole("button", { name: "Log food", exact: true }).click();
+    // Recent foods change the dialog height; measure after they finish loading.
+    await expect(page.getByRole("button", { name: /^Rice bowl 600/ })).toBeVisible();
     const date = await page.getByLabel("Date", { exact: true }).boundingBox();
     const time = await page.getByLabel("Time (Pacific)", { exact: true }).boundingBox();
     if (width >= 520) {

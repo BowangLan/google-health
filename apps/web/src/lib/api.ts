@@ -1,7 +1,7 @@
 import type {
   DayView, FoodSearch, MonthView, Overview, RunResult, Series, SyncOptions, SyncResult,
   Targets, WeightSeries, Kind,
-} from "./types";
+} from "@/lib/types";
 
 export class ApiError extends Error {
   /** The server refused on policy grounds (409) rather than failing. */
