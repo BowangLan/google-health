@@ -1,10 +1,10 @@
 """Workout sessions, read from Google Health; never written back.
 
-Each workout is one exercise session recorded by a Fitbit device: a type
+Each workout is one exercise session returned by Google Health: a type
 (``RUNNING``, ``BIKING``, ...), a start and end time, and the session summary
 Google computes (distance, calories, average heart rate, steps, active zone
-minutes). Sessions from other platforms, such as Apple Watch through Apple
-Health, are skipped; they often duplicate a Fitbit session.
+minutes). Sessions from all platforms, including Apple Watch through Apple
+Health, are included.
 
 ``pull`` mirrors the pulled window into ``workouts.json`` in the data directory,
 keyed by Google's data point ID: new and changed sessions are saved, and saved
@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 
-from healthsync.activity import MM_PER_MILE, SOURCE, ghealth
+from healthsync.activity import MM_PER_MILE, ghealth
 from healthsync.common import write_atomic
 
 FILE = "workouts.json"
@@ -49,9 +49,7 @@ def local(stamp, zone):
 
 
 def session(point, zone):
-    """One Fitbit exercise data point as (id, fields), or None to skip it."""
-    if (point.get("dataSource") or {}).get("platform") != SOURCE:
-        return None
+    """One exercise data point as (id, fields), or None if required fields are missing."""
     exercise = point.get("exercise") or {}
     interval = exercise.get("interval") or {}
     if not point.get("name") or not interval.get("startTime"):
@@ -79,7 +77,7 @@ def session(point, zone):
 
 
 def fetch(binary, since, until, zone):
-    """Fitbit sessions starting on the local days since through until."""
+    """Sessions starting on the local days since through until."""
     payload = ghealth(
         binary, "exercise",
         ["list", "--from", since.isoformat(), "--to", until.isoformat(), "--limit", "1000000"],

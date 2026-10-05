@@ -50,8 +50,9 @@ Calories burned, steps, distance, heart rate, workouts, and run distance are rea
 from Google Health and never pushed. Use
 `uv run hsync <cal|steps|distance|hr|workouts|run> pull --days N` for current numbers,
 or `list` for what was last saved. Heart rate is one row per local hour (average,
-minimum, and maximum bpm), not per day. Only Fitbit data counts; Apple Watch
-records are skipped. Run distance includes treadmill sessions.
+minimum, and maximum bpm), not per day. Heart rate uses only Fitbit records.
+Workouts include all platforms, including Apple Watch. Run distance includes
+Apple Watch runs and treadmill sessions.
 
 ## Recovery and conflicts
 

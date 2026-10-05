@@ -31,10 +31,14 @@ class Sessions(unittest.TestCase):
         self.assertEqual(fields["distance_m"], 5779.6)
         self.assertEqual(fields["active_s"], 2064)
 
-    def test_apple_watch_sessions_are_skipped(self):
-        self.assertIsNone(
-            session(point(8, "RUNNING", "2026-09-27T04:08:16Z", 2038992, "HEALTH_KIT"), LA)
-        )
+    def test_apple_watch_session_fields_in_local_time(self):
+        p = point(8, "RUNNING", "2026-09-27T04:08:16Z", 2038992, "HEALTH_KIT")
+        p["dataSource"]["device"]["displayName"] = "Apple Watch"
+        key, fields = session(p, LA)
+        self.assertEqual(key, "8")
+        self.assertEqual(fields["start"], "2026-09-26T21:08:16-07:00")
+        self.assertEqual(fields["distance_m"], 2039.0)
+        self.assertEqual(fields["device"], "Apple Watch")
 
     def test_run_distance_counts_runs_and_treadmill_only(self):
         saved = dict(
@@ -43,9 +47,10 @@ class Sessions(unittest.TestCase):
                 point(1, "RUNNING", "2026-09-29T03:25:33Z", 168469),
                 point(2, "TREADMILL", "2026-09-29T03:28:08Z", 3669375),
                 point(3, "WALKING", "2026-09-29T04:00:00Z", 1000000),
+                point(4, "RUNNING", "2026-09-29T05:00:00Z", 2038992, "HEALTH_KIT"),
             )
         )
-        self.assertEqual(run_days(saved), {"2026-09-28": {"meters": 3837.9, "runs": 2}})
+        self.assertEqual(run_days(saved), {"2026-09-28": {"meters": 5876.9, "runs": 3}})
 
 
 class Mirror(unittest.TestCase):

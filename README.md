@@ -18,7 +18,7 @@ bodies hold private notes that stay on your machine.
 - Pull existing records, edit them locally, and review changes before pushing.
 - Detect conflicting edits and recover interrupted sync operations.
 - Keep private notes alongside records, with separate food and weight storage.
-- Read calories burned, steps, distance, hourly heart rate, Fitbit workouts, and run
+- Read calories burned, steps, distance, hourly heart rate, workouts, and run
   distance from Google Health.
 
 ## Getting started
@@ -163,9 +163,9 @@ file in the data directory; `list` shows the saved rows without contacting Googl
 | `workouts` | Workout session | Type, start and end, active time, distance, kcal, average bpm, steps, active zone minutes | `workouts.json` |
 | `run` | Local day with a run | Total distance and number of runs | (from `workouts.json`) |
 
-Only Fitbit data is used. Apple Watch data synced through Apple Health also reaches
-Google Health, often duplicating the same walk or run. Workouts and heart rate
-skip every non-Fitbit record. Steps and distance use Google's daily totals, which
+Workouts include all platforms, including Apple Watch data synced through Apple
+Health. Separate records of the same walk or run are kept. Heart rate uses only
+Fitbit records. Steps and distance use Google's daily totals, which
 were checked against the raw records and contain no Apple Watch data.
 
 Heart rate is hourly, not daily: each row is the average, minimum, and maximum of
@@ -489,7 +489,7 @@ Paths below are inside `apps/cli/src/`.
 | [`healthsync/food_commands.py`](apps/cli/src/healthsync/food_commands.py) | Food logging, cloning, and totals |
 | [`healthsync/burned.py`](apps/cli/src/healthsync/burned.py) | Read-only daily calories burned |
 | [`healthsync/activity.py`](apps/cli/src/healthsync/activity.py) | Read-only steps, distance, and hourly heart rate |
-| [`healthsync/workouts.py`](apps/cli/src/healthsync/workouts.py) | Read-only Fitbit workouts and run distance |
+| [`healthsync/workouts.py`](apps/cli/src/healthsync/workouts.py) | Read-only workouts from all platforms and run distance |
 | [`healthsync/web.py`](apps/cli/src/healthsync/web.py) | Local web server and API |
 | [`healthsync/sync_report.py`](apps/cli/src/healthsync/sync_report.py) | Turns `sync` output into the web app's structured report |
 

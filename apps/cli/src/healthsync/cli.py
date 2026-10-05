@@ -198,8 +198,8 @@ def parser():
             # A day of heart rate is 24 rows, so its window defaults to today.
             sp.add_argument("--days", type=positive, default=1 if rows == "hours" else 7)
     for kind, description, rows in (
-        ("workouts", "Fitbit workout sessions (read-only)", "sessions"),
-        ("run", "daily run distance from Fitbit runs and treadmill sessions (read-only)", "days"),
+        ("workouts", "workout sessions from all platforms (read-only)", "sessions"),
+        ("run", "daily run distance from runs and treadmill sessions (read-only)", "days"),
     ):
         group = command(sub, kind, common, help=description)
         kind_sub = group.add_subparsers(dest="cmd", required=True)
