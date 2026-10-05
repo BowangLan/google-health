@@ -189,6 +189,9 @@ These commands need the `activity_and_fitness.readonly` scope, which `hsync auth
 
 ## Web app
 
+For a self-hosted HTTPS dashboard with a private MCP connection for ChatGPT food
+logging, see the [server setup guide](apps/mcp/README.md).
+
 The optional React interface provides a daily journal, food and weight forms,
 trends, and sync controls. It uses the same local records and sync engine as the CLI.
 
