@@ -1,3 +1,10 @@
+# Design outputs
+
+For Google Health design outputs, use UI AST Layer 2 restricted JSX. Read
+`/Users/jeffrey/dev-per/ui-ast/SPEC.md` and its referenced primitive rules before
+documenting an existing interface or proposing a design. Capture UI structure,
+layout, controls, interactions, and visible states in AST code.
+
 # Health logging
 
 This repo logs food and weight to Google Health using editable local files.
