@@ -1,0 +1,4 @@
+{$HSYNC_DOMAIN} {
+    reverse_proxy health:8790
+    # No access log: OAuth codes and consent tickets can occur in URLs.
+}

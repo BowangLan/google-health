@@ -1,0 +1,41 @@
+services:
+  health:
+    build:
+      context: ../..
+      dockerfile: apps/mcp/Dockerfile
+    restart: unless-stopped
+    # Match the owner of the bind-mounted files; defaults to the image's unprivileged user.
+    user: "${HSYNC_UID:-10001}:${HSYNC_GID:-10001}"
+    environment:
+      HSYNC_DATA_DIR: /data
+      GHEALTH_CONFIG_DIR: /credentials
+      HSYNC_CONFIG: /app/server-health.toml
+    volumes:
+      - ${HSYNC_DATA_PATH:?Set the absolute health data directory}:/data
+      - ${GHEALTH_CONFIG_PATH:?Set the absolute ghealth credentials directory}:/credentials
+      - ./health.example.toml:/app/server-health.toml:ro
+    expose:
+      - "8790"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8790/.well-known/oauth-authorization-server',headers={'Host':'${HSYNC_DOMAIN:?Set the public hostname}'})); assert r.status==200"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      health:
+        condition: service_healthy
+    environment:
+      HSYNC_DOMAIN: ${HSYNC_DOMAIN:?Set the public hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  caddy-data:
+  caddy-config:

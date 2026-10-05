@@ -1,0 +1,37 @@
+# Allow only application sources and the Google CLI source into the build context.
+# Google credentials, health journals, server state, .env, and git history stay out.
+**
+!package.json
+!bun.lock
+!turbo.json
+!apps/
+!apps/cli/
+!apps/cli/package.json
+!apps/cli/pyproject.toml
+!apps/cli/src/
+!apps/cli/src/**
+!apps/web/
+!apps/web/**
+apps/web/node_modules/
+apps/web/dist/
+apps/web/test-results/
+apps/web/playwright-report/
+!apps/mcp/
+!apps/mcp/pyproject.toml
+!apps/mcp/src/
+!apps/mcp/src/**
+!apps/mcp/Dockerfile
+!apps/mcp/Dockerfile.dockerignore
+!vendor/
+!vendor/google-health-cli/
+!vendor/google-health-cli/go.mod
+!vendor/google-health-cli/go.sum
+!vendor/google-health-cli/main.go
+!vendor/google-health-cli/cmd/
+!vendor/google-health-cli/cmd/**
+!vendor/google-health-cli/internal/
+!vendor/google-health-cli/internal/**
+!vendor/google-health-cli/pkg/
+!vendor/google-health-cli/pkg/**
+**/__pycache__/
+**/*.pyc

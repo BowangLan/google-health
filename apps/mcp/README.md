@@ -46,6 +46,36 @@ with `--state-dir` or `HSYNC_SERVER_STATE`; keep that directory private and outs
 version control. `HSYNC_CONFIG`, `HSYNC_DATA_DIR`, and `GHEALTH` work as in the CLI.
 If you use a custom data directory, preserve its complete indexes and recovery journals.
 
+## Docker Compose with automatic HTTPS
+
+The image builds Google's CLI from `vendor/google-health-cli` created by the
+existing setup workflow. Its build context excludes credentials and health records.
+Docker does not perform a Google login or upload any of your records during build.
+
+1. Complete Google setup on your machine. Copy the entire `ghealth` configuration
+   directory to the server securely if it is a different machine. It contains
+   secrets and must be writable for token refresh. If moving an existing journal,
+   copy the entire data directory, including hidden indexes and journals.
+2. Copy `apps/mcp/server.env.example` to `apps/mcp/server.env`. Set the hostname and
+   **absolute** data and credential directory paths. Set UID and GID to the user
+   who owns those directories and the mounted TOML file (`id -u` and `id -g`).
+   Make both directories before starting Docker.
+   Edit `health.example.toml` if you want a different timezone or weight unit.
+3. Point the hostname's DNS record at your server and allow ports 80 and 443.
+4. Build and initialize:
+
+   ```sh
+   docker compose --env-file apps/mcp/server.env -f apps/mcp/compose.yaml build
+   docker compose --env-file apps/mcp/server.env -f apps/mcp/compose.yaml run --rm health init --url https://health.example.com
+   docker compose --env-file apps/mcp/server.env -f apps/mcp/compose.yaml up -d
+   ```
+
+The app port is private to Docker; Caddy serves HTTPS. Both health data and OAuth
+state persist in your data directory. The image runs as an unprivileged user.
+The React dashboard's display preferences currently live in the app container;
+food/weight records and MCP state persist, but dashboard display preferences reset
+when the container is replaced.
+
 ## Connect from ChatGPT
 
 Follow [OpenAI's current connection instructions](https://developers.openai.com/plugins/deploy/connect-chatgpt).
