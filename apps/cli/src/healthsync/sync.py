@@ -42,6 +42,14 @@ class Engine:
         by_id, _, _ = self.scan()
         ready = True
         for op in self.store.operations().values():
+            if op["action"] == "replace" and op["state"] == "cleanup" and op.get("new_id"):
+                # The acknowledged ID and journal identify both halves even
+                # when the local replacement was deleted before cleanup.
+                continue
+            if op["state"] == "rollback" and op.get("rollback_fm"):
+                # Rollback journals contain the original fields and private body,
+                # so they can finish after the replacement file was removed.
+                continue
             path = self.store.directory / op["path"]
             # Acknowledged records may have moved before the journal was cleared.
             known_id = op.get("new_id") or (
@@ -89,10 +97,16 @@ class Engine:
             # the journal. Look for the acknowledged id before giving up.
             found = self.scan()[0].get(op.get("new_id"))
             if not found:
-                raise ValueError(
-                    f"restore {op['path']} before recovering this operation"
-                )
-            path = found[0]
+                if op["state"] == "cleanup" and op.get("new_id"):
+                    restored = copy.deepcopy(op["fm"])
+                    restored["id"] = op["new_id"]
+                    write_entry(path, restored, op.get("body", ""))
+                else:
+                    raise ValueError(
+                        f"restore {op['path']} before recovering this operation"
+                    )
+            else:
+                path = found[0]
         current, body = read_entry(path)
         fm = copy.deepcopy(op["fm"])
         if not self.record.matches_digest(current, op["input_digest"]):
@@ -114,17 +128,88 @@ class Engine:
             self.store.operation(key, None)
         return dest
 
+    def _restore_remote(self, path, fm, body="", dry_run=False):
+        """Undo an unsupported local change using the authoritative record."""
+        if dry_run:
+            print(f"  {S.note('restore')}{self.store.rel(path)}: would restore Google Health values")
+            return
+        self.stamp(fm)
+        write_entry(path, fm, body)
+        dest = self.store.relocate(path, fm)
+        self.store.save_index(self.scan()[0])
+        print(f"  {S.ok('rest')}{self.store.rel(dest)}: restored Google Health values (change unsupported)")
+
+    def _rollback_replacement(self, key, op, old):
+        """Remove our replacement when Google refuses deletion of the original."""
+        if op["new_id"] == op["old_id"]:
+            raise ValueError("replacement and original IDs must differ")
+        replacement = self.remote_record(op["new_id"])
+        if replacement and self.record.digest(replacement) != self.record.digest(op["fm"]):
+            print(f"  {S.bad('conf')}replacement changed remotely; rollback kept for review")
+            return False
+        by_id = self.scan()[0]
+        existing = by_id.get(op["new_id"]) or by_id.get(op["old_id"])
+        body = existing[2] if existing else op.get("rollback_body", op.get("body", ""))
+        # Keep enough state to resume even after deleting the replacement, or
+        # after restoring the original but before clearing the operation.
+        op.update(state="rollback", rollback_fm=copy.deepcopy(old), rollback_body=body)
+        self.store.operation(key, op)
+        if replacement:
+            self.remote.delete([op["new_id"]])
+            if self.remote_record(op["new_id"]) is not None:
+                raise RemoteError("replacement deletion pending; run push to finish rollback", uncertain=True)
+        target = self.store.entry_path(old)
+        if target.exists() and read_entry(target)[0].get("id") != op["old_id"]:
+            raise ValueError(f"refusing to overwrite an unrelated file: {target}")
+        self.stamp(old)
+        write_entry(target, old, body)
+        if op["new_id"] in by_id:
+            by_id[op["new_id"]][0].unlink()
+        self.store.save_index(self.scan()[0], drop=[op["new_id"]])
+        self.store.operation(key, None)
+        print(f"  {S.ok('rest')}{self.store.rel(target)}: restored original; removed rejected replacement")
+        return True
+
+    def _recover_rejected_replacements(self):
+        """Finish known forbidden replacements before ordinary reconciliation."""
+        retired = set()
+        if self.record.kind != "food":
+            return retired
+        for key, op in self.store.operations().items():
+            if op["state"] not in ("cleanup", "rollback"):
+                continue
+            old = self.remote_record(op["old_id"])
+            if old and (op["state"] == "rollback" or old.get("source") == "FITBIT"):
+                try:
+                    if self._rollback_replacement(key, op, old):
+                        retired.add(op["new_id"])
+                except RemoteError as exc:
+                    print(f"  {S.bad('part')}{op['path']}: {S.dim(exc)}")
+        return retired
+
     def _cleanup(self, key, op):
         """Finish a food replacement without recreating its new half."""
         old = self.remote_record(op["old_id"])
         if old is not None:
+            if op["state"] == "rollback" or old.get("source") == "FITBIT":
+                return self._rollback_replacement(key, op, old)
             if not self.record.matches_digest(old, op.get("old_digest")):
                 print(
                     f"  {S.bad('conf')}replacement cleanup: old id {op['old_id']} changed; "
                     f"resolve it before retrying"
                 )
                 return False
-            self.remote.delete([op["old_id"]])
+            try:
+                self.remote.delete([op["old_id"]])
+            except RemoteError as exc:
+                if exc.reason == "DATA_POINT_NOT_OWNED_BY_CLIENT" and not exc.uncertain:
+                    return self._rollback_replacement(key, op, old)
+                raise
+        elif op["state"] == "rollback":
+            # The original was deleted elsewhere while rollback was pending.
+            # Do not recreate it remotely or discard the journal's saved fields.
+            print(f"  {S.bad('conf')}original disappeared remotely during rollback; review required")
+            return False
         self._commit(key, op)
         return True
 
@@ -138,6 +223,9 @@ class Engine:
         if fm.get("id"):
             # Lookup by identity, never by the locally edited date.
             old = self.remote_record(fm["id"])
+            if action == "replace" and old and old.get("source") == "FITBIT":
+                self._restore_remote(path, old, body, dry_run)
+                return True
             if old is None or (self.conflicts(original, old) and not force):
                 self.show_conflict(path, original, old)
                 return False
@@ -148,6 +236,14 @@ class Engine:
                     self.store.relocate(path, fm)
                     self.store.save_index(self.scan()[0])
                 return True
+        if action == "replace" and fm.get("food_ref"):
+            # A replacement is a new, independently authored nutrition log.
+            # Reusing a Fitbit catalog reference can fail on create or cause
+            # Google to recompute the saved values from that catalog entry.
+            # Send the local name and nutrition instead, and persist the same
+            # fields in the journal so recovery compares the actual submission.
+            fm.pop("food_ref")
+            payload = record.fm_to_remote(fm)
         if dry_run:
             print(
                 f"  {S.note(action, 7)}{self.store.rel(path)}  "
@@ -165,6 +261,7 @@ class Engine:
             "state": "requested",
             "path": key,
             "fm": copy.deepcopy(fm),
+            "body": body,
             "input_digest": record.digest(original),
             "created": self.clock.now().isoformat(),
         }
@@ -206,7 +303,8 @@ class Engine:
                     f"old id {op['old_id']} needs cleanup: {S.dim(exc)}"
                 )
                 return False
-        print(f"  {S.ok()}{self.store.rel(dest)} {S.dim(action)}")
+        if dest.exists():
+            print(f"  {S.ok()}{self.store.rel(dest)} {S.dim(action)}")
         return True
 
     def add(self, fm, body="", no_push=False, dry_run=False):
@@ -232,7 +330,9 @@ class Engine:
         return 0 if self.push_one(path, fm, body) else 1
 
     def recover(self, points):
-        records = [self.record.remote_to_fm(dp) for dp in points]
+        retired = self._recover_rejected_replacements()
+        records = [self.record.remote_to_fm(dp) for dp in points
+                   if self.record.identity(dp) not in retired]
         claimed = set(self.scan()[0])
         operations = self.store.operations()
         active_paths = {op["path"] for op in operations.values()}
@@ -247,7 +347,7 @@ class Engine:
             if self.store.rel(path) not in active_paths
         )
         for key, op in self.store.operations().items():
-            if op["state"] == "cleanup":
+            if op["state"] in ("cleanup", "rollback"):
                 continue
             if op["action"] == "patch":
                 remote = self.remote_record(op["old_id"])
@@ -319,6 +419,7 @@ class Engine:
             self.store.relocate(path, fm)
             claimed.add(found["id"])
         self.store.save_index(self.scan()[0])
+        return retired
 
     def pull(self, days=7, limit=500, force=False, points=None):
         self.scan()
@@ -331,21 +432,43 @@ class Engine:
         if first < requested:
             print(S.dim(f"widened pull to {since} for pending recovery"))
         points = self.remote.fetch(since, limit=limit) if points is None else points
-        self.recover(points)
+        retired = self.recover(points)
         by_id, _, _ = self.scan()
         doomed = self.store.pending_deletes(by_id)
         operations = self.store.operations()
         reserved = {op.get("old_id") for op in operations.values()} | {
             op.get("new_id") for op in operations.values()
         }
+        # A date query can miss a record whose date changed remotely. Fetch it
+        # by ID and reconcile its fields through the same path as listed records.
+        # Only a confirmed missing ID can remove the local copy.
+        points = list(points)
+        listed = {self.record.identity(dp) for dp in points}
+        missing = set()
+        for eid, (_, local, _) in by_id.items():
+            if (
+                eid in listed
+                or eid in reserved
+                or not since <= self.record.day(local) <= self.clock.today().isoformat()
+            ):
+                continue
+            point = self.remote.get(eid)
+            if point is None:
+                missing.add(eid)
+            else:
+                points.append(point)
         returned, changed, held = set(), 0, 0
         for dp in points:
             fm = self.record.remote_to_fm(dp)
             eid = fm["id"]
+            if eid in retired:
+                # This snapshot predates the rollback's remote deletion.
+                continue
             returned.add(eid)
             if eid in reserved:
                 continue
-            if eid in doomed and not force:
+            unsupported = self.record.kind == "food" and fm.get("source") == "FITBIT"
+            if eid in doomed and not force and not unsupported:
                 print(
                     f"  {S.warn('held')}{doomed[eid].get('path', eid)}: {S.dim('deleted locally')}"
                 )
@@ -355,16 +478,20 @@ class Engine:
             body = ""
             if existing:
                 path, local, body = existing
-                if self.record.dirty(local) and not force:
+                if self.record.dirty(local) and not force and not unsupported:
                     print(
                         f"  {S.warn('held')}{self.store.rel(path)}: {S.dim('locally modified')}"
                     )
                     held += 1
                     continue
+                if self.record.dirty(local) and unsupported:
+                    print(f"  {S.ok('rest')}{self.store.rel(path)}: restored Google Health values (change unsupported)")
             else:
                 path = self.store.entry_path(fm)
                 if path.exists():
                     raise ValueError(f"refusing to overwrite an unrelated file: {path}")
+                if eid in doomed and unsupported:
+                    print(f"  {S.ok('rest')}{self.store.rel(path)}: restored Google Health record (deletion unsupported)")
             self.stamp(fm)
             write_entry(path, fm, body)
             self.store.relocate(path, fm)
@@ -378,7 +505,7 @@ class Engine:
                 eid in returned
                 or eid in reserved
                 or not since <= self.record.day(local) <= self.clock.today().isoformat()
-                or self.remote_record(eid) is not None
+                or eid not in missing
             ):
                 continue
             if self.record.dirty(local) and not force:
@@ -447,7 +574,7 @@ class Engine:
         failed = len(orphans)
         recovered = deleted = 0
         for key, op in self.store.operations().items():
-            if op["state"] == "cleanup" and not dry_run:
+            if op["state"] in ("cleanup", "rollback") and not dry_run:
                 try:
                     if not self._cleanup(key, op):
                         failed += 1
@@ -487,6 +614,8 @@ class Engine:
             remote = self.remote_record(eid)
             if remote is None:
                 gone.add(eid)
+            elif self.record.kind == "food" and remote.get("source") == "FITBIT":
+                self._restore_remote(self.store.entry_path(remote), remote, dry_run=dry_run)
             elif not force and (
                 not meta.get("digest")
                 or not self.record.matches_digest(remote, meta["digest"])
@@ -551,6 +680,9 @@ class Engine:
         by_id, new, orphans = self.scan()
         if not self.recovery_files_ready():
             return 1
+        if not dry_run:
+            self._recover_rejected_replacements()
+            by_id, new, orphans = self.scan()
         since = self.store.earliest_day(self.clock.today())
         print(
             f"{S.bold(self.record.kind + ' sync')} · "
@@ -562,6 +694,22 @@ class Engine:
         for dp in points:
             fm = self.record.remote_to_fm(dp)
             remote[fm["id"]] = fm
+        if not dry_run and self.record.kind == "food":
+            pending_ids = {
+                eid for op in self.store.operations().values()
+                for eid in (op.get("old_id"), op.get("new_id")) if eid
+            }
+            for eid, (path, local, body) in by_id.items():
+                other = remote.get(eid)
+                if (eid not in pending_ids and other and other.get("source") == "FITBIT"
+                        and (self.record.dirty(local)
+                             or self.record.digest(local) != self.record.digest(other))):
+                    self._restore_remote(path, other, body)
+            for eid in self.store.pending_deletes(by_id):
+                other = remote.get(eid)
+                if eid not in pending_ids and other and other.get("source") == "FITBIT":
+                    self._restore_remote(self.store.entry_path(other), other)
+            by_id, new, orphans = self.scan()
         doomed = self.store.pending_deletes(by_id)
         incoming, outgoing, attention = [], [], []
         operations = self.store.operations()
@@ -628,7 +776,7 @@ class Engine:
                     "recover", self.store.rel(path) + ": run pull before retrying", []
                 ))
         for op in operations.values():
-            action = "push to finish cleanup" if op["state"] == "cleanup" else "pull to reconcile"
+            action = "push to finish cleanup" if op["state"] in ("cleanup", "rollback") else "pull to reconcile"
             attention.append(("recover", f"{op['path']}: {action}", []))
 
         for title, colour, rows in (
@@ -677,7 +825,9 @@ class Engine:
             rc = self.pull((self.clock.today() - since).days + 1, limit, points=points)
         if push:
             print(f"\n{S.bold('Pushing to Google Health…')}", flush=True)
-            rc = max(rc, self.push(yes=yes, limit=limit))
+            # Pull may leave replacement cleanup pending for push to finish.
+            # Report the remaining recovery state after push, not that earlier hold.
+            rc = self.push(yes=yes, limit=limit)
         if rc:
             print(S.yellow("Sync needs attention. Review held or failed records above before retrying."))
         else:

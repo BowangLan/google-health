@@ -4,8 +4,10 @@ import copy
 import datetime as dt
 import io
 import json
+import socket
 import tempfile
 import unittest
+import urllib.error
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -384,6 +386,220 @@ class SyncTests(unittest.TestCase):
         self.assertFalse(e.store.operations())
         self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
 
+    def test_food_sync_both_succeeds_after_finishing_replacement_cleanup(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "kcal", 700, "Private note")
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(), 1)
+        e.remote.fail_delete = False
+        self.output.truncate(0)
+        self.output.seek(0)
+
+        self.assertEqual(e.sync(pull=True, push=True), 0)
+        self.assertNotIn("Sync needs attention", self.output.getvalue())
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        self.assertEqual(set(e.store.scan()[0]), set(e.remote.points))
+        for eid, (_, fm, body) in e.store.scan()[0].items():
+            self.assertEqual(e.record.digest(fm), e.record.digest(e.remote_record(eid)))
+            self.assertFalse(e.record.dirty(fm))
+            self.assertEqual(body.strip(), "Private note")
+        self.assertEqual(sum(c[0] == "create" for c in e.remote.calls), 1)
+
+    def test_catalog_food_replacement_uses_saved_nutrition_without_catalog(self):
+        e = self.make_engine(Food())
+        food = self.food() | {
+            "food_ref": "users/me/dataTypes/food/dataPoints/14719974",
+            "carbs_g": 72,
+            "fat_g": 24,
+            "nutrients": {"PROTEIN": 38, "SODIUM": 0.48},
+            "serving": {"amount": 1, "unit": "package"},
+        }
+        dp = e.remote.put(food)
+        dp["nutritionLog"]["foodDisplayName"] = food["name"]
+        self.assertEqual(e.pull(), 0)
+        path, _, _ = next(iter(e.store.scan()[0].values()))
+        self.edit(path, "meal", "SNACK", "Keep my private note")
+        self.assertEqual(e.push(), 0)
+        payload = next(call[1]["nutritionLog"] for call in e.remote.calls
+                       if call[0] == "create")
+        self.assertNotIn("food", payload)
+        self.assertEqual(payload["foodDisplayName"], food["name"])
+        self.assertEqual(payload["mealType"], "SNACK")
+        self.assertEqual(payload["energy"]["kcal"], 650)
+        self.assertEqual(payload["totalCarbohydrate"]["grams"], 72)
+        self.assertEqual(payload["totalFat"]["grams"], 24)
+        self.assertIn({"nutrient": "PROTEIN", "quantity": {"grams": 38}},
+                      payload["nutrients"])
+        self.assertNotIn("1234", e.remote.points)
+        self.assertEqual(e.pull(), 0)
+        _, fm, body = next(iter(e.store.scan()[0].values()))
+        self.assertNotIn("food_ref", fm)
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(body.strip(), "Keep my private note")
+
+    def test_fitbit_food_edit_restores_remote_before_creating_a_duplicate(self):
+        e = self.make_engine(Food())
+        dp = e.remote.put(self.food())
+        dp["dataSource"] = {"platform": "FITBIT"}
+        self.assertEqual(e.pull(), 0)
+        path, _, _ = next(iter(e.store.scan()[0].values()))
+        self.edit(path, "meal", "SNACK", "Keep my private note")
+        e.remote.calls.clear()
+        self.assertEqual(e.push(), 0)
+        self.assertFalse(any(call[0] in ("create", "delete")
+                             for call in e.remote.calls))
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertFalse(e.store.operations())
+        fm, body = read_entry(path)
+        self.assertEqual(fm["meal"], "LUNCH")
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(body.strip(), "Keep my private note")
+        self.assertIn("restored", self.output.getvalue())
+
+    def test_fitbit_food_delete_restores_remote_without_blocking_owned_deletes(self):
+        e = self.make_engine(Food())
+        dp = e.remote.put(self.food(), "1234")
+        dp["dataSource"] = {"platform": "FITBIT"}
+        e.remote.put(self.food() | {"name": "Another meal"}, "5678")
+        self.assertEqual(e.pull(), 0)
+        for path, _, _ in e.store.scan()[0].values():
+            path.unlink()
+        e.remote.calls.clear()
+        self.assertEqual(e.push(yes=True), 0)
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        self.assertEqual(set(e.store.scan()[0]), {"1234"})
+        self.assertIn(("delete", ["5678"]), e.remote.calls)
+        self.assertIn("restored", self.output.getvalue())
+
+    def test_interrupted_fitbit_replacement_rolls_back_and_restores_original(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "meal", "SNACK", "Keep my private note")
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(), 1)
+        e.remote.points["1234"]["dataSource"] = {"platform": "FITBIT"}
+        e.remote.fail_delete = False
+        e.remote.calls.clear()
+        self.assertEqual(e.push(), 0)
+        self.assertFalse(any(call[0] == "create" for call in e.remote.calls))
+        self.assertIn(("delete", ["1001"]), e.remote.calls)
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        _, fm, body = e.store.scan()[0]["1234"]
+        self.assertEqual(fm["meal"], "LUNCH")
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(body.strip(), "Keep my private note")
+
+    def test_pull_push_and_sync_restore_unsupported_fitbit_edit_and_deletion(self):
+        e = self.make_engine(Food())
+        dp = e.remote.put(self.food(), "1234")
+        dp["dataSource"] = {"platform": "FITBIT"}
+        dp = e.remote.put(self.food() | {"name": "Another meal"}, "5678")
+        dp["dataSource"] = {"platform": "FITBIT"}
+        self.assertEqual(e.pull(), 0)
+        for command in ("pull", "push", "sync"):
+            with self.subTest(command=command):
+                self.edit(e.store.scan()[0]["1234"][0], "meal", "SNACK", "Private note")
+                e.store.scan()[0]["5678"][0].unlink()
+                self.assertEqual(getattr(e, command)(), 0)
+                self.assertEqual(set(e.store.scan()[0]), {"1234", "5678"})
+                self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+                for _, fm, _ in e.store.scan()[0].values():
+                    self.assertEqual(fm["meal"], "LUNCH")
+                    self.assertFalse(e.record.dirty(fm))
+                self.assertEqual(e.store.scan()[0]["1234"][2].strip(), "Private note")
+
+    def test_fitbit_restore_dry_run_leaves_local_edit_and_deletion_intact(self):
+        e = self.make_engine(Food())
+        dp = e.remote.put(self.food(), "1234")
+        dp["dataSource"] = {"platform": "FITBIT"}
+        dp = e.remote.put(self.food() | {"name": "Another meal"}, "5678")
+        dp["dataSource"] = {"platform": "FITBIT"}
+        self.assertEqual(e.pull(), 0)
+        self.edit(e.store.scan()[0]["1234"][0], "meal", "SNACK")
+        e.store.scan()[0]["5678"][0].unlink()
+        e.remote.calls.clear()
+        self.assertEqual(e.push(dry_run=True), 0)
+        self.assertEqual(e.store.scan()[0]["1234"][1]["meal"], "SNACK")
+        self.assertEqual(set(e.store.pending_deletes(e.store.scan()[0])), {"5678"})
+        self.assertTrue(all(call[0] == "get" for call in e.remote.calls))
+
+    def test_missing_replacement_file_is_rolled_back_by_pull_push_or_sync(self):
+        for command in ("pull", "push", "sync"):
+            with self.subTest(command=command):
+                with tempfile.TemporaryDirectory() as temp:
+                    directory = Path(temp) / "food"
+                    config = Config("food", directory, directory / ".index.json", Path("fake"))
+                    e = Engine(Store(config, Food()), FakeRemote(Food()), FixedClock())
+                    path, _, _ = self.pull_one(e, self.food())
+                    self.edit(path, "meal", "SNACK", "Private note")
+                    e.remote.fail_delete = True
+                    self.assertEqual(e.push(), 1)
+                    e.remote.points["1234"]["dataSource"] = {"platform": "FITBIT"}
+                    e.remote.fail_delete = False
+                    next(iter(e.store.scan()[0].values()))[0].unlink()
+                    e.remote.calls.clear()
+                    self.assertEqual(getattr(e, command)(), 0)
+                    self.assertEqual(set(e.remote.points), {"1234"})
+                    self.assertEqual(set(e.store.scan()[0]), {"1234"})
+                    self.assertFalse(e.store.operations())
+                    self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+                    _, fm, body = e.store.scan()[0]["1234"]
+                    self.assertEqual(fm["meal"], "LUNCH")
+                    self.assertFalse(e.record.dirty(fm))
+                    self.assertEqual(body.strip(), "Private note")
+                    self.assertFalse(any(call[0] == "create" for call in e.remote.calls))
+
+    def test_replacement_rollback_resumes_after_crash_following_remote_delete(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "meal", "SNACK", "Private note")
+        e.remote.fail_delete = True
+        self.assertEqual(e.push(), 1)
+        e.remote.points["1234"]["dataSource"] = {"platform": "FITBIT"}
+        e.remote.fail_delete = False
+        with patch("healthsync.sync.write_entry", side_effect=OSError("crash")):
+            with self.assertRaises(OSError):
+                e.push()
+        self.assertEqual(set(e.remote.points), {"1234"})
+        op = next(iter(e.store.operations().values()))
+        self.assertEqual(op["state"], "rollback")
+        self.assertEqual(op["rollback_body"].strip(), "Private note")
+        next(iter(e.store.scan()[0].values()))[0].unlink()
+        e.remote.calls.clear()
+        self.assertEqual(e.pull(), 0)
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        self.assertEqual(set(e.store.scan()[0]), {"1234"})
+        self.assertEqual(e.store.scan()[0]["1234"][2].strip(), "Private note")
+        self.assertFalse(any(call[0] in ("create", "delete") for call in e.remote.calls))
+
+    def test_food_replacement_ownership_rejection_rolls_back_other_client_record(self):
+        e = self.make_engine(Food())
+        path, _, _ = self.pull_one(e, self.food())
+        self.edit(path, "meal", "SNACK", "Private note")
+        delete = e.remote.delete
+
+        def reject_original(ids):
+            if "1234" in ids:
+                raise RemoteError("not owned", reason="DATA_POINT_NOT_OWNED_BY_CLIENT")
+            return delete(ids)
+
+        with patch.object(e.remote, "delete", side_effect=reject_original):
+            self.assertEqual(e.push(), 0)
+        self.assertEqual(set(e.remote.points), {"1234"})
+        self.assertEqual(set(e.store.scan()[0]), {"1234"})
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        _, fm, body = e.store.scan()[0]["1234"]
+        self.assertEqual(fm["meal"], "LUNCH")
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(body.strip(), "Private note")
+
     def test_cleanup_refuses_remote_edit_after_replacement(self):
         e = self.make_engine(Food())
         path, _, _ = self.pull_one(e, self.food())
@@ -438,6 +654,27 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(len(e.remote.points), 1)
         self.assertEqual(e.pull(), 0)
         self.assertEqual(len(e.store.scan()[0]), 1)
+
+    def test_dns_failure_does_not_leave_create_pending(self):
+        e = self.make_engine(Food())
+        e.remote = GoogleHealth(Path("fake"), e.record)
+        error = urllib.error.URLError(socket.gaierror(8, "nodename not known"))
+        with patch.object(e.remote, "access_token", return_value="test-token"), patch(
+            "healthsync.google_health.urllib.request.urlopen", side_effect=error
+        ):
+            self.assertEqual(e.add(self.food()), 1)
+        self.assertFalse(e.store.operations())
+        self.assertEqual(len(e.store.scan()[1]), 1)
+
+    def test_transport_timeout_keeps_create_pending(self):
+        e = self.make_engine(Food())
+        e.remote = GoogleHealth(Path("fake"), e.record)
+        error = urllib.error.URLError(TimeoutError("timed out"))
+        with patch.object(e.remote, "access_token", return_value="test-token"), patch(
+            "healthsync.google_health.urllib.request.urlopen", side_effect=error
+        ):
+            self.assertEqual(e.add(self.food()), 1)
+        self.assertEqual(len(e.store.operations()), 1)
 
     def test_default_pull_includes_old_pending_create(self):
         e = self.engine
@@ -514,8 +751,28 @@ class SyncTests(unittest.TestCase):
         path, fm, _ = self.pull_one()
         e.remote.put(fm | {"time": "2026-08-01T08:00:00-07:00"}, "1234")
         self.assertEqual(e.pull(), 0)
-        self.assertTrue(path.exists())
+        moved_path, moved, _ = e.store.scan()[0]["1234"]
+        self.assertTrue(moved_path.exists())
+        self.assertEqual(moved["time"], "2026-08-01T08:00:00-07:00")
         self.assertIn("0 removed", self.output.getvalue())
+
+    def test_food_pull_push_reconciles_remote_date_move_outside_window(self):
+        e = self.make_engine(Food())
+        path, fm, _ = self.pull_one(e, self.food())
+        write_entry(path, fm, "Private note")
+        moved = fm | {
+            "start": "2026-08-01T12:00:00-07:00",
+            "end": "2026-08-01T12:01:00-07:00",
+        }
+        e.remote.put(moved, "1234")
+
+        self.assertEqual(e.pull(), 0)
+        self.assertEqual(e.push(), 0)
+        self.assertEqual(set(e.store.scan()[0]), set(e.remote.points))
+        _, local, body = e.store.scan()[0]["1234"]
+        self.assertEqual(e.record.digest(local), e.record.digest(e.remote_record("1234")))
+        self.assertFalse(e.record.dirty(local))
+        self.assertEqual(body.strip(), "Private note")
 
     def test_missing_remote_is_a_conflict_and_not_recreated(self):
         e = self.engine
@@ -656,19 +913,26 @@ class SyncTests(unittest.TestCase):
         self.assertFalse(e.store.operations())
         self.assertEqual(len(e.remote.points), 1)
 
-    def test_missing_cleanup_file_blocks_remote_deletion(self):
+    def test_missing_acknowledged_cleanup_file_is_restored_from_journal(self):
         e = self.make_engine(Food())
         path, _, _ = self.pull_one(e, self.food())
-        self.edit(path, 'kcal', 700)
+        self.edit(path, 'kcal', 700, 'Private note')
         e.remote.fail_delete = True
         self.assertEqual(e.push(), 1)
         op = next(iter(e.store.operations().values()))
         (e.store.directory / op['path']).rename(self.root / 'staged.md')
         e.remote.fail_delete = False
         e.remote.calls.clear()
-        self.assertEqual(e.push(), 1)
-        self.assertEqual(e.remote.calls, [])
-        self.assertEqual(len(e.remote.points), 2)
+        self.assertEqual(e.push(), 0)
+        self.assertFalse(any(call[0] == 'create' for call in e.remote.calls))
+        self.assertEqual(set(e.remote.points), {'1001'})
+        self.assertEqual(set(e.store.scan()[0]), {'1001'})
+        self.assertFalse(e.store.operations())
+        self.assertFalse(e.store.pending_deletes(e.store.scan()[0]))
+        _, fm, body = e.store.scan()[0]['1001']
+        self.assertEqual(fm['kcal'], 700)
+        self.assertFalse(e.record.dirty(fm))
+        self.assertEqual(body.strip(), 'Private note')
 
     def test_crash_after_response_before_commit_is_recovered(self):
         e = self.engine
@@ -976,6 +1240,22 @@ class CliTests(unittest.TestCase):
 
 
 class TransportTests(unittest.TestCase):
+    def test_delete_exposes_structured_ownership_rejection(self):
+        remote = GoogleHealth(Path("fake"), Food())
+        payload = {"error": {"details": [
+            {"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+             "reason": "DATA_POINT_NOT_OWNED_BY_CLIENT"}
+        ]}}
+        error = urllib.error.HTTPError(
+            remote.url, 403, "Forbidden", {}, io.BytesIO(json.dumps(payload).encode())
+        )
+        with patch.object(remote, "access_token", return_value="test-token"), patch(
+            "healthsync.google_health.urllib.request.urlopen", side_effect=error
+        ), self.assertRaises(RemoteError) as caught:
+            remote.delete(["1234"])
+        self.assertEqual(caught.exception.reason, "DATA_POINT_NOT_OWNED_BY_CLIENT")
+        self.assertFalse(caught.exception.uncertain)
+
     def test_operation_name_is_not_a_record_id(self):
         self.assertEqual(extract_id({"name": "operations/abcd"}), "")
         self.assertEqual(

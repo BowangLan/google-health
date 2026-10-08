@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import subprocess
 import urllib.error
 import urllib.parse
@@ -13,9 +14,10 @@ MAX_PAGES = 50
 
 
 class RemoteError(RuntimeError):
-    def __init__(self, message, uncertain=False):
+    def __init__(self, message, uncertain=False, reason=None):
         super().__init__(message)
         self.uncertain = uncertain
+        self.reason = reason
 
 
 def extract_id(response):
@@ -83,12 +85,24 @@ class GoogleHealth:
         except urllib.error.HTTPError as exc:
             if exc.code == 404 and method == "GET":
                 return None
-            detail = exc.read().decode()[:1000]
+            raw = exc.read().decode()
+            reason = None
+            try:
+                details = json.loads(raw).get("error", {}).get("details", [])
+                reason = next((item["reason"] for item in details if item.get("reason")), None)
+            except (ValueError, TypeError, AttributeError):
+                pass
             raise RemoteError(
-                f"HTTP {exc.code}: {detail}", uncertain=exc.code >= 500
+                f"HTTP {exc.code}: {raw[:1000]}", uncertain=exc.code >= 500, reason=reason
+            ) from None
+        except urllib.error.URLError as exc:
+            # A failed DNS lookup sends no request, so a write can be retried.
+            # Other transport failures may occur after Google accepted it.
+            raise RemoteError(
+                str(exc),
+                uncertain=method != "GET" and not isinstance(exc.reason, socket.gaierror),
             ) from None
         except (
-            urllib.error.URLError,
             TimeoutError,
             OSError,
             json.JSONDecodeError,

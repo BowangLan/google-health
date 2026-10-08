@@ -359,6 +359,15 @@ Food edits use **create, then delete**, because nutrition-log PATCH did not
 work in the original API probes. The replacement gets a new ID. Create failure
 leaves the old record intact. An incomplete replacement is journaled: a later
 push finishes deletion of the old ID without creating another replacement.
+Replacements use the saved name and nutrition values without a catalog reference:
+reusing a Fitbit catalog reference can fail on create or recompute those values.
+Fitbit-owned food records cannot be edited or deleted through this API client.
+Pull and push restore Google's values when a local edit or deletion is unsupported,
+preserving private notes in existing files. No replacement is created for such edits.
+If an earlier replacement cannot delete its original, recovery removes the new
+record and restores the original document. Pull, push, and sync can finish this
+rollback even if the local replacement file is missing. Make changes to Fitbit
+records in Fitbit, then pull.
 
 Zero-valued nutrients compare the same as omitted nutrients, matching Google's
 read responses. This applies to sync hashes and deletion conflict checks without
@@ -400,7 +409,9 @@ The request format follows Google's
 
 ### Conflicts
 
-`pull` retains locally edited records. `pull --force` takes the remote version
+`pull` retains locally edited records that this client can update. Unsupported
+Fitbit food edits and deletions are restored from Google automatically.
+`pull --force` takes the remote version
 and can restore a file deleted locally; the private body is preserved for existing
 files. `push` checks records by ID, so changing a date cannot evade conflict
 checking. A remote record that has disappeared is not silently recreated.
@@ -439,14 +450,20 @@ while unresolved operations remain; a newly requested `add` still targets only
 its own record.
 
 Pull, push, and sync check that pending-operation files are present before any
-remote calls. If one was moved outside the collection or renamed before receiving
+remote calls for unknown outcomes. If one was moved outside the collection or renamed before receiving
 an ID, move it back to the printed path (or restore it from backup) and run pull.
 Keep the journal intact. An acknowledged record can still be recovered after a
-rename within the collection because its saved ID identifies it.
+rename within the collection because its saved ID identifies it. A missing food
+replacement whose new ID was acknowledged can be reconstructed from its journal;
+it does not block cleanup or rollback. New journals also save the private body.
 
 An incomplete food replacement keeps the new record and old ID in its journal.
 Pull can recover the new ID; push retries only the old-ID cleanup, checking first
-that the old record has not changed. Pending/uncertain weight updates reconcile
+that the old record has not changed. A definitive ownership rejection rolls back
+the replacement instead of leaving a duplicate and a permanently pending operation.
+Rollback is journaled before deleting the replacement and can resume after a crash.
+Food pull and sync also complete known rejected replacements during recovery.
+Pending/uncertain weight updates reconcile
 when a read matches the submitted values. If no unique outcome can be confirmed,
 the command stays held and requires manual review of the journal and remote data.
 

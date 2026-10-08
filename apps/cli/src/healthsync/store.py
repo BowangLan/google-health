@@ -243,7 +243,7 @@ class Store:
             not isinstance(op, dict)
             or not {"action", "state", "path", "fm", "input_digest"} <= op.keys()
             or op["action"] not in ("create", "patch", "replace")
-            or op["state"] not in ("requested", "acknowledged", "cleanup")
+            or op["state"] not in ("requested", "acknowledged", "cleanup", "rollback")
             or not isinstance(op["fm"], dict)
             or not isinstance(op["path"], str)
             or Path(op["path"]).is_absolute()
