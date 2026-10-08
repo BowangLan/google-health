@@ -1,27 +1,5 @@
-import { fieldClassName, segmentedClassName } from "@/components/forms/form-styles";
+import { Segmented } from "@/design-system/patterns/segmented";
 
-export function UnitPicker({
-  value,
-  onChange,
-}: {
-  value: "kg" | "lb";
-  onChange: (value: "kg" | "lb") => void;
-}) {
-  return (
-    <div className={fieldClassName}>
-      <span>Unit</span>
-      <div className={segmentedClassName} role="group" aria-label={"Unit"}>
-        {(["kg", "lb"] as const).map((unit) => (
-          <button
-            key={unit}
-            type="button"
-            aria-pressed={unit === value}
-            onClick={() => onChange(unit)}
-          >
-            {unit}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+export function UnitPicker({ value, onChange }: { value: "kg" | "lb"; onChange: (value: "kg" | "lb") => void }) {
+  return <Segmented label="Unit" options={["kg", "lb"] as const} value={value} onChange={onChange} />;
 }

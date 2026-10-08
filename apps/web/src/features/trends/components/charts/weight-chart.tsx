@@ -81,7 +81,7 @@ export function WeightChart({ series, scale, hoverDay, onHover, pinnedDay, onPic
               <g key={gap.from}>
                 <rect className="viz-gap fill-white opacity-[0.03]" x={x1} y={top} width={Math.max(x2 - x1, 1)} height={bottom - top} />
                 {x2 - x1 > 48 && (
-                  <text className="viz-tick fill-chart-tick [font-family:var(--sans)] text-[10px]" x={(x1 + x2) / 2} y={top + 12} textAnchor="middle">
+                  <text className="viz-tick fill-chart-tick [font-family:var(--ds-font-body)] text-ui-micro" x={(x1 + x2) / 2} y={top + 12} textAnchor="middle">
                     no readings · {gap.days}d
                   </text>
                 )}

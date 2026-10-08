@@ -1,0 +1,23 @@
+/* Component recipes resolve semantic roles; no product state lives here. */
+@layer theme {
+  :root {
+    --ds-button-radius: var(--ds-radius-capsule);
+    --ds-button-height: var(--ds-control-height);
+    --ds-button-background: var(--ds-color-action);
+    --ds-button-foreground: var(--ds-color-on-action);
+    --ds-button-hover: var(--ds-color-action-hover);
+    --ds-button-secondary-background: var(--ds-color-control);
+    --ds-button-secondary-hover: var(--ds-color-control-active);
+    --ds-button-key-border: var(--ds-p-black-14);
+    --ds-input-background: var(--ds-p-gray-975);
+    --ds-input-focus-border: var(--ds-p-white-45);
+    --ds-input-focus-shadow: 0 0 0 3px var(--ds-p-white-08);
+    --ds-segment-background: var(--ds-p-white-05);
+    --ds-segment-shadow: inset 0 1px 0 var(--ds-p-white-08), 0 1px 4px var(--ds-p-black-40);
+    --ds-dialog-background: var(--ds-p-gray-925);
+    --ds-dialog-width: 600px;
+    --ds-dialog-island-border: var(--ds-p-white-09);
+    --ds-dialog-backdrop-blur: 6px;
+    --ds-dialog-close-background: var(--ds-color-border);
+  }
+}

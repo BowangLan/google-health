@@ -1,13 +1,16 @@
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/button";
+import { Surface } from "@/design-system/primitives/surface";
+import { Badge } from "@/design-system/primitives/badge";
+import { IconButton } from "@/design-system/primitives/icon-button";
+import { cn } from "@/design-system/lib/cn";
+import { Button } from "@/design-system/primitives/button";
 import { useState } from "react";
-import { AppleActivityCard } from "@/components/ui/apple-activity-ring";
+import { NutritionGauge } from "@/features/journal/components/nutrition-gauge";
 import { MEALS, MEAL_NAME, clock, num, parseDay, shiftDay } from "@/lib/format";
 import { budget } from "@/lib/budget";
 import type { DayView, FoodRow, Kind, Targets, WeightRow } from "@/lib/types";
 import { EditRecord } from "@/features/journal/components/edit-record";
 import { DeleteConfirm } from "@/features/journal/components/delete-confirm";
-import { Dialog } from "@/components/dialog";
+import { Dialog } from "@/design-system/patterns/dialog";
 import {
   IconAgain,
   IconBurned,
@@ -16,7 +19,7 @@ import {
   IconEdit,
   IconFood,
   IconWeight,
-} from "@/lib/icons";
+} from "@/design-system/foundations/icons";
 
 type RecordAction = {
   mode: "edit" | "delete";
@@ -37,157 +40,93 @@ function Nutrition({
   onSync: () => void;
 }) {
   const { totals } = view;
-  // Energy is measured against what Google says was burned that day, not a
-  // fixed goal. Today's burn is still accumulating, so the ring is too.
-  const burnedKcal = view.burned?.kcal ?? null;
-  const proteinTarget = targets.daily_protein_g;
-  const kcalRatio = burnedKcal ? totals.kcal / burnedKcal : null;
-  const proteinRatio = proteinTarget ? totals.protein / proteinTarget : null;
   const energy = {
     protein: totals.protein * 4,
     carbs: totals.carbs * 4,
     fat: totals.fat * 9,
   };
-  const energyTotal = energy.protein + energy.carbs + energy.fat;
-  const share = (value: number) =>
-    energyTotal > 0 ? (value / energyTotal) * 100 : 0;
+  const total = energy.protein + energy.carbs + energy.fat;
+  const share = (value: number) => (total > 0 ? (value / total) * 100 : 0);
   return (
-    <section className="tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.035)] tile-nutrition" aria-label="Nutrition for selected day">
-      <header className={cn(
-        "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
-        "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-[13px] [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
-        "[&_>_span]:text-[11.5px] [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
-        "[&_.text-action]:whitespace-nowrap"
-      )}>
-        <h2>Nutrition</h2>
-        <span>
-          {view.food.length} {view.food.length === 1 ? "entry" : "entries"}
+    <Surface
+      className="shadow-none tile tile-nutrition col-span-full "
+      aria-label="Nutrition for selected day"
+    >
+      <header className="flex flex-wrap items-baseline justify-between gap-2 px-6 pt-6 max-[521px]:px-5">
+        <h2 className="text-ui-title">Daily nutrition</h2>
+        <span className="text-ui-label text-muted-foreground">
+          {view.food.length} {view.food.length === 1 ? "entry" : "entries"}{" "}
+          logged
         </span>
       </header>
-      <AppleActivityCard
-        title={null}
-        compact
-        ringSize={132}
-        strokeWidth={14}
-        activities={[
-          {
-            label: "Energy", value: kcalRatio === null ? null : kcalRatio * 100,
-            color: "var(--energy)", endColor: "#ff6b8b", size: 132,
-            current: totals.kcal, target: burnedKcal, unit: "kcal burned"
-          },
-          {
-            label: "Protein", value: proteinRatio === null ? null : proteinRatio * 100,
-            color: "var(--protein)", endColor: "#9ee7ff", size: 98,
-            current: totals.protein, target: proteinTarget, unit: "g"
-          },
-        ]}
-      >
-        <dl className={cn(
-          "ring-legend grid gap-3.5 m-0 [&_>_div]:grid [&_>_div]:gap-[1px] [&_dt]:text-[12px] [&_dt]:font-semibold",
-          "[&_.energy_dt]:text-energy [&_.protein_dt]:text-protein [&_dd]:m-0 [&_dd]:flex [&_dd]:items-baseline",
-          "[&_dd]:gap-[5px] [&_b]:[font:650_26px/1.1_var(--rounded)] [&_b]:tracking-[-0.02em]",
-          "[&_dd_span]:text-muted-foreground [&_dd_span]:text-[13px] [&_.ring-ratio]:text-subtle",
-          "[&_.ring-ratio]:text-[11.5px] [&_.ring-ratio.ok]:[color:#30d158] [&_.ring-ratio.closing]:[color:#ffd60a]",
-          "[&_.ring-ratio.over]:text-over max-[761px]:[&_b]:text-[23px] max-[381px]:w-full",
-          "max-[381px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[381px]:items-start max-[381px]:gap-3",
-          "max-[381px]:[&_dd]:flex-wrap max-[381px]:[&_dd_span]:w-full max-[381px]:[&_dd_span]:text-[11px] max-[381px]:[&_dd_span]:whitespace-nowrap"
-        )}>
+      <div className="grid grid-cols-[minmax(0,1.65fr)_minmax(230px,1fr)] items-center gap-10 p-6 max-[761px]:grid-cols-1 max-[761px]:gap-7 max-[521px]:p-5">
+        <NutritionGauge
+          consumed={totals.kcal}
+          energyTarget={targets.daily_kcal}
+        />
+        <div className="macro-split min-w-0 border-0 border-l border-solid border-border pl-8 max-[761px]:border-l-0 max-[761px]:border-t max-[761px]:pl-0 max-[761px]:pt-5">
+          <h3 className="mb-1 text-[14px]">Your macros</h3>
+          <p className="mb-5 text-ui-label leading-5 text-muted-foreground">
+            Totals for the portions you logged.
+          </p>
+          <dl className="m-0 grid gap-3 text-ui-body">
+            {(
+              [
+                ["Protein", totals.protein, "var(--ds-color-protein)"],
+                ["Carbs", totals.carbs, "var(--ds-color-carbs)"],
+                ["Fat", totals.fat, "var(--ds-color-fat)"],
+              ] as const
+            ).map(([label, grams, color]) => (
+              <div
+                key={label}
+                className="flex items-baseline justify-between gap-4"
+              >
+                <dt className="flex items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 rounded-[3px]"
+                    style={{ background: color }}
+                    aria-hidden
+                  />
+                  {label}
+                </dt>
+                <dd className="m-0 font-semibold tabular-nums">
+                  {num(grams, 1)}{" "}
+                  <span className="font-normal text-muted-foreground">g</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
           <div
-            className={
-              "energy" + (kcalRatio !== null && kcalRatio > 1 ? " over-target" : "")
-            }
+            className="macro-bar mt-5 flex h-2 gap-1 overflow-hidden rounded-capsule"
+            aria-hidden
           >
-            <dt>Energy</dt>
-            <dd>
-              <b>{num(totals.kcal) ?? "0"}</b>
-              <span>{burnedKcal ? `/ ${num(burnedKcal)} kcal burned` : "kcal"}</span>
-            </dd>
-            <dd
-              className={
-                "ring-ratio" +
-                (burnedKcal
-                  ? " " +
-                  budget(burnedKcal, totals.kcal, targets.daily_deficit_kcal ?? 0).state
-                  : "")
-              }
-            >
-              {kcalRatio === null
-                ? "Burned not pulled yet"
-                : `${Math.round(kcalRatio * 100)}% of burned${view.day === view.today ? " so far" : ""
-                }`}
-            </dd>
+            <i
+              className="bg-protein"
+              style={{ width: share(energy.protein) + "%" }}
+            />
+            <i
+              className="bg-carbs"
+              style={{ width: share(energy.carbs) + "%" }}
+            />
+            <i className="bg-fat" style={{ width: share(energy.fat) + "%" }} />
           </div>
-          <div className="protein">
-            <dt>Protein</dt>
-            <dd>
-              <b>{num(totals.protein, 1) ?? "0"}</b>
-              <span>{proteinTarget ? `/ ${num(proteinTarget)} g` : "g"}</span>
-            </dd>
-            {proteinRatio !== null && (
-              <dd className="ring-ratio">{Math.round(proteinRatio * 100)}% of target</dd>
-            )}
-          </div>
-        </dl>
-      </AppleActivityCard>
-      <div className="macro-split grid gap-2.5 [padding:10px_18px_18px]">
-        <div
-          className={cn(
-            "macro-bar flex gap-0.5 h-1.5 rounded-full overflow-hidden [&_i]:block [&_i]:rounded-full",
-            "[&_i]:[transition:width_var(--spring-time)_var(--spring)] [&_.protein]:bg-protein [&_.carbs]:bg-carbs",
-            "[&_.fat]:bg-fat"
-          )}
-          role="img"
-          aria-label="Share of energy from protein, carbs and fat"
-        >
-          {energyTotal > 0 && (
-            <>
-              <i className="protein" style={{ width: share(energy.protein) + "%" }} />
-              <i className="carbs" style={{ width: share(energy.carbs) + "%" }} />
-              <i className="fat" style={{ width: share(energy.fat) + "%" }} />
-            </>
-          )}
+          <p className="mt-3 text-ui-caption leading-5 text-subtle">
+            Calories eaten are compared with your configured daily target.
+          </p>
         </div>
-        <dl className={cn(
-          "macro-values flex flex-wrap gap-y-1.5 gap-x-4 m-0 text-[12px] [&_>_div]:flex [&_>_div]:gap-1.5 [&_>_div]:whitespace-nowrap",
-          "[&_dt]:text-subtle [&_.protein_dt]:text-protein [&_.carbs_dt]:text-carbs [&_.fat_dt]:text-fat [&_dd]:m-0",
-          "[&_dd]:text-foreground"
-        )}>
-          <div className="protein">
-            <dt>Protein</dt>
-            <dd>{num(totals.protein, 1) ?? "0"} g</dd>
-          </div>
-          <div className="carbs">
-            <dt>Carbs</dt>
-            <dd>{num(totals.carbs, 1) ?? "0"} g</dd>
-          </div>
-          <div className="fat">
-            <dt>Fat</dt>
-            <dd>{num(totals.fat, 1) ?? "0"} g</dd>
-          </div>
-          {totals.fiber > 0 && (
-            <div>
-              <dt>Fibre</dt>
-              <dd>{num(totals.fiber, 1)} g</dd>
-            </div>
-          )}
-          {totals.sugar > 0 && (
-            <div>
-              <dt>Sugar</dt>
-              <dd>{num(totals.sugar, 1)} g</dd>
-            </div>
-          )}
-        </dl>
       </div>
       {pending > 0 && (
-        <button className={cn(
-          "pending-notice flex justify-between items-center w-[calc(100%_-_24px)] [margin:0_12px_12px] py-2.5 px-3.5",
-          "border-0 rounded-[14px] bg-warning-muted text-warning text-[12px] font-[590] text-left [&_span]:text-foreground"
-        )} onClick={onSync}>
-          {pending} {pending === 1 ? "record needs" : "records need"} syncing
-          <span>Review</span>
+        <button
+          className="pending-notice mx-4 mb-4 flex min-h-11 w-[calc(100%_-_32px)] items-center justify-between gap-3 rounded-lg border-0 bg-warning-muted px-4 text-left text-ui-body text-warning"
+          onClick={onSync}
+        >
+          <span>
+            {pending} {pending === 1 ? "record needs" : "records need"} syncing
+          </span>
+          <span className="font-semibold">Review</span>
         </button>
       )}
-    </section>
+    </Surface>
   );
 }
 
@@ -203,69 +142,103 @@ function FoodEntry({
   onReuse: () => void;
 }) {
   return (
-    <article className={cn(
-      "food-entry relative grid grid-cols-[42px_minmax(0,_1fr)_auto_44px] items-baseline gap-2.5 my-0 mx-1.5 py-3",
-      "px-3 rounded-[14px] [&_+_.food-entry::before]:[content:''] [&_+_.food-entry::before]:absolute",
-      "[&_+_.food-entry::before]:top-0 [&_+_.food-entry::before]:left-16 [&_+_.food-entry::before]:right-3",
-      "[&_+_.food-entry::before]:border-t [&_+_.food-entry::before]:[border-top-style:solid]",
-      "[&_+_.food-entry::before]:border-t-border pointer-hover:[&:hover]:bg-popover",
-      "pointer-hover:[&:hover::before]:opacity-[0] pointer-hover:[&:hover_+_.food-entry::before]:opacity-[0]",
-      "min-[762px]:pointer-hover:[&_.record-actions]:opacity-[0] min-[762px]:pointer-hover:[&:hover_.record-actions]:opacity-[1]",
-      "min-[762px]:pointer-hover:[&:focus-within_.record-actions]:opacity-[1] [&_.record-actions]:[transition:opacity_140ms_ease]",
-      "max-[761px]:grid-cols-[minmax(0,_1fr)_auto] max-[761px]:gap-y-0.5 max-[761px]:gap-x-2.5 max-[761px]:py-2.5",
-      "[&_.record-actions]:col-start-3 [&_.record-actions]:row-start-1 [&_.record-actions]:self-start [&_.record-actions]:relative [&_.record-actions]:-top-1.25",
-      "max-[761px]:px-3 max-[761px]:[&_+_.food-entry::before]:left-3 max-[761px]:[&_.record-actions]:col-span-full",
-      "max-[761px]:[&_.record-actions]:col-start-1 max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:top-0",
-      "max-[761px]:[&_.record-actions]:[margin-left:-8px] max-[761px]:[&_.record-actions]:opacity-100"
-    )} aria-label={row.name}>
-      <time className="food-entry-time text-subtle text-[11.5px] leading-5 max-[761px]:col-span-full max-[761px]:text-[11px]" dateTime={row.time}>
-        {clock(row.time)}
-      </time>
-      <div className={cn(
-        "food-entry-body min-w-0 [&_h4]:text-[13px] [&_h4]:leading-5 [&_h4]:font-[560]",
-        "[&_h4]:wrap-anywhere [&_h4_svg]:text-subtle [&_h4_svg]:mr-1.5 [&_h4_svg]:[vertical-align:-2px] [&_>_p]:flex [&_>_p]:flex-wrap [&_>_p]:items-center",
-        "[&_>_p]:gap-y-0.5 [&_>_p]:gap-x-2.5 [&_>_p]:mt-0.5 [&_>_p]:text-subtle [&_>_p]:text-[11.5px]",
-        "[&_.protein]:[color:color-mix(in_srgb,_var(--protein)_75%,_var(--text-3))]",
-        "[&_.carbs]:[color:color-mix(in_srgb,_var(--carbs)_75%,_var(--text-3))]",
-        "[&_.fat]:[color:color-mix(in_srgb,_var(--fat)_70%,_var(--text-3))]"
-      )}>
-        <h4>
+    <article
+      className="food-entry grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 border-0 border-b border-solid border-border px-6 py-5 last:border-b-0 max-[521px]:px-5"
+      aria-label={row.name}
+    >
+      <div className="food-entry-body min-w-0">
+        <button
+          className="mb-1.5 block min-h-6 max-w-full rounded-[5px] border-0 bg-transparent p-0 text-left text-ui-subheading font-semibold leading-6 text-foreground pointer-hover:hover:underline"
+          aria-label={"Edit " + row.name}
+          onClick={onEdit}
+        >
           {row.identified && (
-            <IconCatalogue size={13} aria-label="Google catalog food" />
+            <IconCatalogue
+              size={14}
+              className="mr-1.5 inline-block align-middle text-subtle"
+              aria-label="Google catalog food"
+            />
           )}
-          {row.name}
-        </h4>
-        <p>
+          <span className="wrap-anywhere">{row.name}</span>
+        </button>
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-ui-label leading-5 text-muted-foreground">
           <span>
             {row.amount} {row.unit}
           </span>
-          <span className="protein">P {num(row.protein, 1) ?? "?"}</span>
-          <span className="carbs">C {num(row.carbs, 1) ?? "?"}</span>
-          <span className="fat">F {num(row.fat, 1) ?? "?"}</span>
+          <time dateTime={row.time}>{clock(row.time)}</time>
           {row.state !== "synced" && (
-            <span className="record-state inline-flex items-center rounded-full py-0 px-[7px] bg-warning-muted text-warning text-[10.5px] font-[590] leading-[18px]">{row.state}</span>
+            <Badge tone="warning" className="record-state text-ui-label">
+              {row.state}
+            </Badge>
           )}
         </p>
       </div>
-      <div className="food-entry-energy col-start-4 row-start-1 [font:600_14px/20px_var(--rounded)] text-right [&_>_span]:block [&_>_span]:[font:400_10.5px/16px_var(--sans)] [&_>_span]:text-subtle max-[761px]:col-start-2 max-[761px]:row-start-2">
+      <div className="food-entry-energy text-right text-[20px] font-semibold tabular-nums tracking-[-0.02em]">
         {num(row.kcal)}
-        <span>kcal</span>
+        <span className="block text-ui-caption font-normal tracking-normal text-subtle">
+          kcal
+        </span>
       </div>
-      <div className="record-actions flex gap-0.5">
-        <Button variant="icon" aria-label={"Edit " + row.name} title="Edit" onClick={onEdit}>
-          <IconEdit aria-hidden />
-        </Button>
-        <Button variant="icon" aria-label={"Reuse " + row.name} title="Reuse" onClick={onReuse}>
-          <IconAgain aria-hidden />
-        </Button>
-        <Button
-          variant="icon" className="danger"
-          aria-label={"Delete " + row.name}
-          title="Delete"
-          onClick={onDelete}
-        >
-          <IconDelete aria-hidden />
-        </Button>
+      <div className="col-span-full flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-ui-detail leading-5 text-muted-foreground">
+          <span className="protein">
+            Protein {num(row.protein, 1) ?? "?"} g
+          </span>
+          <span className="carbs">Carbs {num(row.carbs, 1) ?? "?"} g</span>
+          <span className="fat">Fat {num(row.fat, 1) ?? "?"} g</span>
+        </p>
+        <div className="record-actions flex items-center gap-1">
+          <Button
+            variant="secondary"
+            className="min-h-9 px-3 text-ui-label max-[761px]:min-h-11"
+            aria-label={"Reuse " + row.name}
+            onClick={onReuse}
+          >
+            <IconAgain size={14} aria-hidden />
+            Repeat
+          </Button>
+          <details
+            className="relative"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}
+            onBlur={(event) => {
+              if (
+                !event.currentTarget.contains(
+                  event.relatedTarget as Node | null,
+                )
+              )
+                event.currentTarget.open = false;
+            }}
+          >
+            <summary
+              className="flex min-h-11 cursor-pointer list-none items-center rounded-capsule px-3 text-ui-label text-muted-foreground marker:[content:'']"
+              aria-label={"More actions for " + row.name}
+            >
+              More
+            </summary>
+            <div className="absolute right-0 top-full z-10 min-w-[140px] rounded-lg border border-solid border-input bg-popover p-1 shadow-lg">
+              <Button
+                variant="danger"
+                className=" w-full justify-start border-0 bg-transparent px-3"
+                aria-label={"Delete " + row.name}
+                onClick={(event) => {
+                  const disclosure = event.currentTarget.closest("details");
+                  disclosure?.removeAttribute("open");
+                  disclosure?.querySelector("summary")?.focus();
+                  onDelete();
+                }}
+              >
+                <IconDelete size={14} aria-hidden />
+                Delete
+              </Button>
+            </div>
+          </details>
+        </div>
       </div>
     </article>
   );
@@ -282,10 +255,18 @@ function WeightChange({ view, value }: { view: DayView; value: number }) {
   const when =
     previous.day === shiftDay(view.day, -1)
       ? "yesterday"
-      : parseDay(previous.day).toLocaleDateString([], { month: "short", day: "numeric" });
+      : parseDay(previous.day).toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+        });
   const unit = view.weight_unit;
   return (
-    <span className={"delta col-start-1 text-[12px] font-semibold [&.good]:[color:#30d158] [&.warn]:[color:#ffd60a] [&.bad]:text-over [&.flat]:text-muted-foreground " + (change < 0 ? "good" : change > 0 ? "bad" : "flat")}>
+    <span
+      className={
+        "delta col-start-1 text-ui-label font-semibold [&.good]:[color:var(--ds-color-positive)] [&.warn]:[color:var(--ds-color-caution)] [&.bad]:text-over [&.flat]:text-muted-foreground " +
+        (change < 0 ? "good" : change > 0 ? "bad" : "flat")
+      }
+    >
       {change === 0
         ? `No change vs ${when}`
         : `${change > 0 ? "+" : "\u2212"}${Math.abs(change).toFixed(1)} ${unit} vs ${when}`}
@@ -307,9 +288,19 @@ function BudgetLeft({ view, deficit }: { view: DayView; deficit: number }) {
           ? `${num(left)} kcal left`
           : `${num(left)} kcal under budget`;
   return (
-    <span className={"delta col-start-1 text-[12px] font-semibold [&.good]:[color:#30d158] [&.warn]:[color:#ffd60a] [&.bad]:text-over [&.flat]:text-muted-foreground " + (state === "over" ? "bad" : state === "closing" ? "warn" : "good")}>
+    <span
+      className={
+        "delta col-start-1 text-ui-label font-semibold [&.good]:[color:var(--ds-color-positive)] [&.warn]:[color:var(--ds-color-caution)] [&.bad]:text-over [&.flat]:text-muted-foreground " +
+        (state === "over" ? "bad" : state === "closing" ? "warn" : "good")
+      }
+    >
       {text}
-      {deficit > 0 && <span className="delta-note text-subtle font-normal"> after {num(deficit)} deficit</span>}
+      {deficit > 0 && (
+        <span className="delta-note text-subtle font-normal">
+          {" "}
+          after {num(deficit)} deficit
+        </span>
+      )}
     </span>
   );
 }
@@ -349,158 +340,56 @@ export function Day({
   return (
     <>
       {view.broken.length > 0 && (
-        <div className={cn(
-          "errorcard border border-solid border-[rgb(245_184_92_/_0.3)] bg-warning-muted rounded-[var(--r-tile)] p-5.5",
-          "grid gap-3.5 text-[13px] [&_h2]:text-[16px] [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
-          "[&_pre]:[font:11.5px/1.6_var(--mono)] [&_pre]:text-muted-foreground [&_.secondary]:justify-self-start"
-        )} role="alert">
+        <div
+          className={cn(
+            "errorcard border border-solid border-[var(--ds-color-warning-border)] bg-warning-muted rounded-tile p-5.5",
+            "grid gap-3.5 text-ui-body [&_h2]:text-[16px] [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
+            "[&_pre]:[font:11.5px/1.6_var(--ds-font-code)] [&_pre]:text-muted-foreground [&_.secondary]:justify-self-start",
+          )}
+          role="alert"
+        >
           <p>Some records could not be read.</p>
           <pre>{view.broken.join("\n")}</pre>
         </div>
       )}
-      <div className={cn(
-        "day grid gap-3 [transition:opacity_200ms_ease] [&[aria-busy=true]]:opacity-[0.6]",
-        "max-[1181px]:grid-cols-[minmax(0,_1.35fr)_minmax(0,_1fr)] max-[1181px]:items-start",
-        "max-[761px]:grid-cols-[minmax(0,_1fr)]"
-      )} aria-busy={loading} inert={loading}>
-        <Nutrition view={view} targets={targets} pending={pending} onSync={onSync} />
-        <div className={cn(
-          "tile-pair grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-3 max-[1181px]:grid-cols-[minmax(0,_1fr)]",
-          "max-[1181px]:h-full max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))] max-[381px]:grid-cols-[minmax(0,_1fr)] min-[1182px]:items-stretch"
-        )}>
-          <section className={cn(
-            "tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)]",
-            "shadow-[inset_0_1px_0_rgb(255_255_255_/_0.035)] tile-weight [&_h2_svg]:text-weight"
-          )} aria-label="Weight for selected day">
-            <header className={cn(
+      <div
+        className={cn(
+          "day grid grid-cols-[minmax(0,1fr)_300px] gap-5 items-start [transition:opacity_var(--ds-duration-normal)_ease] [&[aria-busy=true]]:opacity-[0.6]",
+          "max-[961px]:grid-cols-[minmax(0,1fr)]",
+        )}
+        aria-busy={loading}
+        inert={loading}
+      >
+        <Nutrition
+          view={view}
+          targets={targets}
+          pending={pending}
+          onSync={onSync}
+        />
+        <Surface
+          className={cn("tile", "meal-log min-h-[300px] pb-2")}
+          aria-label="Meals for selected day"
+        >
+          <header
+            className={cn(
               "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
-              "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-[13px] [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
-              "[&_>_span]:text-[11.5px] [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
-              "[&_.text-action]:whitespace-nowrap"
-            )}>
-              <h2>
-                <IconWeight size={15} aria-hidden />
-                Weight
-              </h2>
-              <button className="text-action border-0 bg-none bg-transparent py-0.5 px-0 text-muted-foreground text-[12px] font-[590] pointer-hover:[&:hover]:text-foreground" onClick={onAddWeight}>
-                Log weight
-              </button>
-            </header>
-            {view.weights.length === 0 ? (
-              <p className="tile-empty [padding:12px_18px_18px] text-subtle text-[13px]">No weigh-in</p>
-            ) : (
-              view.weights.map((point, index) => (
-                <div className={cn(
-                  "reading grid grid-cols-[minmax(0,_1fr)_auto] items-start gap-y-0.5 gap-x-2 [padding:8px_18px_16px]",
-                  "[&_+_.reading]:border-t [&_+_.reading]:[border-top-style:solid] [&_+_.reading]:border-t-border [&_+_.reading]:pt-3",
-                  "[&_strong]:col-start-1 [&_strong]:[font:650_28px/1.1_var(--rounded)] [&_strong]:tracking-[-0.02em]",
-                  "[&_strong_small]:[font:500_13px_var(--sans)] [&_strong_small]:text-muted-foreground",
-                  "[&_strong_small]:tracking-[0] [&_p]:col-span-full [&_p]:text-muted-foreground [&_p]:text-[12px]",
-                  "[&_.record-actions]:col-start-2 [&_.record-actions]:row-start-1 [&_.record-actions]:self-center",
-                  "max-[761px]:[&_strong]:whitespace-nowrap max-[761px]:[&_.record-actions]:col-start-1",
-                  "max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:[margin-left:-8px]"
-                )} key={point.path}>
-                  <strong>
-                    {num(point.value, 1)}
-                    <small> {point.unit}</small>
-                  </strong>
-                  {index === 0 && <WeightChange view={view} value={point.value} />}
-                  <span className="reading-meta col-start-1 flex items-center gap-2 text-subtle text-[11.5px]">
-                    {clock(point.time)}
-                    {point.state !== "synced" && (
-                      <span className="record-state inline-flex items-center rounded-full py-0 px-[7px] bg-warning-muted text-warning text-[10.5px] font-[590] leading-[18px]">{point.state}</span>
-                    )}
-                  </span>
-                  {point.remote_note && <p>{point.remote_note}</p>}
-                  <div className="record-actions flex gap-0.5">
-                    <Button
-                      variant="icon"
-                      aria-label={"Edit weight at " + clock(point.time)}
-                      title="Edit"
-                      onClick={() =>
-                        setAction({ mode: "edit", kind: "weight", record: point, title: "Weight" })
-                      }
-                    >
-                      <IconEdit aria-hidden />
-                    </Button>
-                    <Button
-                      variant="icon" className="danger"
-                      aria-label={"Delete weight at " + clock(point.time)}
-                      title="Delete"
-                      onClick={() =>
-                        setAction({ mode: "delete", kind: "weight", record: point, title: "Weight" })
-                      }
-                    >
-                      <IconDelete aria-hidden />
-                    </Button>
-                  </div>
-                </div>
-              ))
+              "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-ui-body [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
+              "[&_>_span]:text-ui-detail [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
+              "[&_.text-action]:whitespace-nowrap",
             )}
-          </section>
-          <section className={cn(
-            "tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)]",
-            "shadow-[inset_0_1px_0_rgb(255_255_255_/_0.035)] tile-burned [&_h2_svg]:text-energy",
-            "max-[761px]:[&_.tile-head_>_span]:hidden"
-          )} aria-label="Calories burned for selected day">
-            <header className={cn(
-              "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
-              "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-[13px] [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
-              "[&_>_span]:text-[11.5px] [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
-              "[&_.text-action]:whitespace-nowrap"
-            )}>
-              <h2>
-                <IconBurned size={15} aria-hidden />
-                Burned
-              </h2>
-              <span>Google Health</span>
-            </header>
-            {view.burned ? (
-              <div className={cn(
-                "reading grid grid-cols-[minmax(0,_1fr)_auto] items-start gap-y-0.5 gap-x-2 [padding:8px_18px_16px]",
-                "[&_+_.reading]:border-t [&_+_.reading]:[border-top-style:solid] [&_+_.reading]:border-t-border [&_+_.reading]:pt-3",
-                "[&_strong]:col-start-1 [&_strong]:[font:650_28px/1.1_var(--rounded)] [&_strong]:tracking-[-0.02em]",
-                "[&_strong_small]:[font:500_13px_var(--sans)] [&_strong_small]:text-muted-foreground",
-                "[&_strong_small]:tracking-[0] [&_p]:col-span-full [&_p]:text-muted-foreground [&_p]:text-[12px]",
-                "[&_.record-actions]:col-start-2 [&_.record-actions]:row-start-1 [&_.record-actions]:self-center",
-                "max-[761px]:[&_strong]:whitespace-nowrap max-[761px]:[&_.record-actions]:col-start-1",
-                "max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:[margin-left:-8px]"
-              )}>
-                <strong>
-                  {num(view.burned.kcal)}
-                  <small> kcal</small>
-                </strong>
-                <BudgetLeft view={view} deficit={targets.daily_deficit_kcal ?? 0} />
-                <span className="reading-meta col-start-1 flex items-center gap-2 text-subtle text-[11.5px]">
-                  {view.day === view.today ? "So far, updated " : "Updated "}
-                  {view.burned.fetched.slice(0, 10) === view.day
-                    ? clock(view.burned.fetched)
-                    : view.burned.fetched.slice(5, 10) + " " + clock(view.burned.fetched)}
-                </span>
-              </div>
-            ) : (
-              <p className="tile-empty [padding:12px_18px_18px] text-subtle text-[13px]">Not pulled yet</p>
-            )}
-          </section>
-        </div>
-        <section className={cn(
-          "tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)]",
-          "shadow-[inset_0_1px_0_rgb(255_255_255_/_0.035)] meal-log pb-2 max-[1181px]:col-span-full"
-        )} aria-label="Meals for selected day">
-          <header className={cn(
-            "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
-            "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-[13px] [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
-            "[&_>_span]:text-[11.5px] [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
-            "[&_.text-action]:whitespace-nowrap"
-          )}>
+          >
             <h2>Food log</h2>
-            <span>Per portion</span>
+            <span>
+              {view.food.length} {view.food.length === 1 ? "entry" : "entries"}
+            </span>
           </header>
           {view.food.length === 0 ? (
-            <div className={cn(
-              "empty-day grid justify-items-center gap-2 [padding:44px_24px_40px] text-center [&_svg]:text-subtle [&_svg]:mb-1",
-              "[&_h3]:text-[15px] [&_p]:text-muted-foreground [&_p]:text-[12.5px] [&_p]:mb-2"
-            )}>
+            <div
+              className={cn(
+                "empty-day grid justify-items-center gap-2 [padding:44px_24px_40px] text-center [&_svg]:text-subtle [&_svg]:mb-1",
+                "[&_h3]:text-ui-subheading [&_p]:text-muted-foreground [&_p]:text-[12.5px] [&_p]:mb-2",
+              )}
+            >
               <IconFood size={26} aria-hidden />
               <h3>No food logged for this day.</h3>
               <p>Add a meal or reuse one you’ve logged before.</p>
@@ -513,23 +402,41 @@ export function Day({
               const rows = view.food.filter((row) => row.meal === meal);
               if (!rows.length) return null;
               return (
-                <section className="meal-group" key={meal} aria-label={MEAL_NAME[meal] ?? meal}>
-                  <div className={cn(
-                    "meal-heading flex justify-between items-baseline [padding:16px_18px_4px] [&_h3]:text-[12px]",
-                    "[&_h3]:text-muted-foreground [&_>_span]:text-subtle [&_>_span]:text-[11.5px]"
-                  )}>
+                <section
+                  className="meal-group"
+                  key={meal}
+                  aria-label={MEAL_NAME[meal] ?? meal}
+                >
+                  <div
+                    className={cn(
+                      "meal-heading flex justify-between items-baseline [padding:16px_18px_4px] [&_h3]:text-ui-label",
+                      "[&_h3]:text-muted-foreground [&_>_span]:text-subtle [&_>_span]:text-ui-detail",
+                    )}
+                  >
                     <h3>{MEAL_NAME[meal] ?? meal}</h3>
-                    <span>{num(rows.reduce((sum, row) => sum + row.kcal, 0))} kcal</span>
+                    <span>
+                      {num(rows.reduce((sum, row) => sum + row.kcal, 0))} kcal
+                    </span>
                   </div>
                   {rows.map((row) => (
                     <FoodEntry
                       key={row.path}
                       row={row}
                       onEdit={() =>
-                        setAction({ mode: "edit", kind: "food", record: row, title: row.name })
+                        setAction({
+                          mode: "edit",
+                          kind: "food",
+                          record: row,
+                          title: row.name,
+                        })
                       }
                       onDelete={() =>
-                        setAction({ mode: "delete", kind: "food", record: row, title: row.name })
+                        setAction({
+                          mode: "delete",
+                          kind: "food",
+                          record: row,
+                          title: row.name,
+                        })
                       }
                       onReuse={() => onReuse(row)}
                     />
@@ -538,14 +445,185 @@ export function Day({
               );
             })
           )}
-        </section>
+        </Surface>
+        <div
+          className={cn(
+            "tile-pair grid grid-cols-1 gap-5 max-[961px]:grid-cols-2 max-[521px]:grid-cols-1",
+          )}
+        >
+          <Surface
+            className={cn("tile", "tile-weight [&_h2_svg]:text-weight")}
+            aria-label="Weight for selected day"
+          >
+            <header
+              className={cn(
+                "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
+                "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-ui-body [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
+                "[&_>_span]:text-ui-detail [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
+                "[&_.text-action]:whitespace-nowrap",
+              )}
+            >
+              <h2>
+                <IconWeight size={15} aria-hidden />
+                Weight
+              </h2>
+              <button
+                className="text-action min-h-11 border-0 bg-none bg-transparent py-0.5 px-0 text-muted-foreground text-ui-label font-control pointer-hover:[&:hover]:text-foreground"
+                onClick={onAddWeight}
+              >
+                Log weight
+              </button>
+            </header>
+            {view.weights.length === 0 ? (
+              <p className="tile-empty [padding:12px_18px_18px] text-subtle text-ui-body">
+                No weigh-in
+              </p>
+            ) : (
+              view.weights.map((point, index) => (
+                <div
+                  className={cn(
+                    "reading grid grid-cols-[minmax(0,_1fr)_auto] items-start gap-y-0.5 gap-x-2 [padding:8px_18px_16px]",
+                    "[&_+_.reading]:border-t [&_+_.reading]:[border-top-style:solid] [&_+_.reading]:border-t-border [&_+_.reading]:pt-3",
+                    "[&_strong]:col-start-1 [&_strong]:[font:650_28px/1.1_var(--ds-font-numeric)] [&_strong]:tracking-[-0.02em]",
+                    "[&_strong_small]:[font:500_13px_var(--ds-font-body)] [&_strong_small]:text-muted-foreground",
+                    "[&_strong_small]:tracking-[0] [&_p]:col-span-full [&_p]:text-muted-foreground [&_p]:text-ui-label",
+                    "[&_.record-actions]:col-start-2 [&_.record-actions]:row-start-1 [&_.record-actions]:self-center",
+                    "max-[761px]:[&_strong]:whitespace-nowrap max-[761px]:[&_.record-actions]:col-start-1",
+                    "max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:[margin-left:-8px]",
+                  )}
+                  key={point.path}
+                >
+                  <strong>
+                    {num(point.value, 1)}
+                    <small> {point.unit}</small>
+                  </strong>
+                  {index === 0 && (
+                    <WeightChange view={view} value={point.value} />
+                  )}
+                  <span className="reading-meta col-start-1 flex items-center gap-2 text-subtle text-ui-detail">
+                    {clock(point.time)}
+                    {point.state !== "synced" && (
+                      <Badge
+                        tone="warning"
+                        className="record-state px-[7px] text-[10.5px] font-control leading-[18px]"
+                      >
+                        {point.state}
+                      </Badge>
+                    )}
+                  </span>
+                  {point.remote_note && <p>{point.remote_note}</p>}
+                  <div className="record-actions flex gap-0.5">
+                    <IconButton
+                      size="compact"
+                      aria-label={"Edit weight at " + clock(point.time)}
+                      title="Edit"
+                      onClick={() =>
+                        setAction({
+                          mode: "edit",
+                          kind: "weight",
+                          record: point,
+                          title: "Weight",
+                        })
+                      }
+                    >
+                      <IconEdit aria-hidden />
+                    </IconButton>
+                    <IconButton
+                      size="compact"
+                      tone="danger"
+                      aria-label={"Delete weight at " + clock(point.time)}
+                      title="Delete"
+                      onClick={() =>
+                        setAction({
+                          mode: "delete",
+                          kind: "weight",
+                          record: point,
+                          title: "Weight",
+                        })
+                      }
+                    >
+                      <IconDelete aria-hidden />
+                    </IconButton>
+                  </div>
+                </div>
+              ))
+            )}
+          </Surface>
+          <Surface
+            className={cn(
+              "tile",
+              "tile-burned [&_h2_svg]:text-energy",
+              "max-[761px]:[&_.tile-head_>_span]:hidden",
+            )}
+            aria-label="Calories burned for selected day"
+          >
+            <header
+              className={cn(
+                "tile-head flex items-center justify-between gap-3 [padding:15px_18px_0] min-h-[42px] [&_h2]:flex",
+                "[&_h2]:items-center [&_h2]:gap-[7px] [&_h2]:text-ui-body [&_h2]:tracking-[-0.005em] [&_>_span]:text-subtle",
+                "[&_>_span]:text-ui-detail [&_h2]:whitespace-nowrap [&_>_span]:whitespace-nowrap",
+                "[&_.text-action]:whitespace-nowrap",
+              )}
+            >
+              <h2>
+                <IconBurned size={15} aria-hidden />
+                Burned
+              </h2>
+              <span>Google Health</span>
+            </header>
+            {view.burned ? (
+              <div
+                className={cn(
+                  "reading grid grid-cols-[minmax(0,_1fr)_auto] items-start gap-y-0.5 gap-x-2 [padding:8px_18px_16px]",
+                  "[&_+_.reading]:border-t [&_+_.reading]:[border-top-style:solid] [&_+_.reading]:border-t-border [&_+_.reading]:pt-3",
+                  "[&_strong]:col-start-1 [&_strong]:[font:650_28px/1.1_var(--ds-font-numeric)] [&_strong]:tracking-[-0.02em]",
+                  "[&_strong_small]:[font:500_13px_var(--ds-font-body)] [&_strong_small]:text-muted-foreground",
+                  "[&_strong_small]:tracking-[0] [&_p]:col-span-full [&_p]:text-muted-foreground [&_p]:text-ui-label",
+                  "[&_.record-actions]:col-start-2 [&_.record-actions]:row-start-1 [&_.record-actions]:self-center",
+                  "max-[761px]:[&_strong]:whitespace-nowrap max-[761px]:[&_.record-actions]:col-start-1",
+                  "max-[761px]:[&_.record-actions]:row-auto max-[761px]:[&_.record-actions]:[margin-left:-8px]",
+                )}
+              >
+                <strong>
+                  {num(view.burned.kcal)}
+                  <small> kcal</small>
+                </strong>
+                <BudgetLeft
+                  view={view}
+                  deficit={targets.daily_deficit_kcal ?? 0}
+                />
+                <span className="reading-meta col-start-1 flex items-center gap-2 text-subtle text-ui-detail">
+                  {view.day === view.today ? "So far, updated " : "Updated "}
+                  {view.burned.fetched.slice(0, 10) === view.day
+                    ? clock(view.burned.fetched)
+                    : view.burned.fetched.slice(5, 10) +
+                      " " +
+                      clock(view.burned.fetched)}
+                </span>
+              </div>
+            ) : (
+              <div className="grid gap-3 px-5 pb-5 pt-3">
+                <p className="text-ui-body text-muted-foreground">
+                  Not pulled yet. Download activity to see this day’s burn.
+                </p>
+                <Button
+                  variant="secondary"
+                  className="justify-self-start"
+                  onClick={onSync}
+                >
+                  Open sync
+                </Button>
+              </div>
+            )}
+          </Surface>
+        </div>
       </div>
       {action && (
         <Dialog
           title={(action.mode === "edit" ? "Edit " : "Delete ") + action.kind}
           onClose={() => setAction(null)}
         >
-          <p className="record-date text-muted-foreground bg-popover py-3 px-6 border-b [border-bottom-style:solid] border-b-border text-[12px] max-[761px]:px-5">
+          <p className="record-date text-muted-foreground bg-popover py-3 px-6 border-b [border-bottom-style:solid] border-b-border text-ui-label max-[761px]:px-5">
             {parseDay(action.record.day).toLocaleDateString([], {
               weekday: "long",
               month: "long",

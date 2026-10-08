@@ -1,13 +1,13 @@
-import { cn } from "@/lib/utils";
-import { fieldClassName, formClassName } from "@/components/forms/form-styles";
-import { Button } from "@/components/button";
+import { cn } from "@/design-system/lib/cn";
+import { fieldClassName, formClassName } from "@/design-system/patterns/form-styles";
+import { Button } from "@/design-system/primitives/button";
 import { useEffect, useRef, useState } from "react";
 import * as api from "@/lib/api";
-import { num } from "@/lib/format";
+import { num, parseDay } from "@/lib/format";
 import type { FoodMatch, FoodRow } from "@/lib/types";
 import { MealPicker } from "@/features/journal/components/meal-picker";
-import { TextField } from "@/components/forms/text-field";
-import { IconAdd } from "@/lib/icons";
+import { TextField } from "@/design-system/patterns/text-field";
+import { IconAdd } from "@/design-system/foundations/icons";
 
 interface Draft {
   meal: string;
@@ -69,6 +69,7 @@ function fromFood(match: FoodRow): Draft {
  * nutrients use `add` with the displayed values.
  */
 export function FoodComposer({
+  day: selectedDay,
   today,
   onClose,
   onLogged,
@@ -76,6 +77,7 @@ export function FoodComposer({
   source,
 }: {
   source?: FoodRow;
+  day: string;
   today: string;
   onClose: () => void;
   onLogged: (name: string, day: string, at: string) => void;
@@ -85,14 +87,14 @@ export function FoodComposer({
     values: Record<string, string | boolean>,
   ) => Promise<{ ok: boolean; text: string }>;
 }) {
-  const [day, setDay] = useState(today);
+  const [day, setDay] = useState(selectedDay);
   const [at, setAt] = useState(() =>
-    new Date().toLocaleTimeString("en-GB", {
+    selectedDay === today ? new Date().toLocaleTimeString("en-GB", {
       timeZone: "America/Los_Angeles",
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
-    }),
+    }) : "",
   );
   const [keyword, setKeyword] = useState("");
   const [matches, setMatches] = useState<FoodMatch[]>([]);
@@ -103,15 +105,17 @@ export function FoodComposer({
   );
   const [problem, setProblem] = useState<string | null>(null);
   const [searchProblem, setSearchProblem] = useState(false);
+  const [searching, setSearching] = useState(true);
   const [saving, setSaving] = useState(false);
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     search.current?.focus();
-  }, []);
+  }, [Boolean(draft)]);
 
   useEffect(() => {
     let live = true;
+    setSearching(true);
     const timer = window.setTimeout(async () => {
       try {
         const found = await api.searchFoods(keyword.trim());
@@ -125,6 +129,8 @@ export function FoodComposer({
           setMatches([]);
           setSearchProblem(true);
         }
+      } finally {
+        if (live) setSearching(false);
       }
     }, 150);
     return () => {
@@ -204,6 +210,18 @@ export function FoodComposer({
       setProblem(
         "Add a name, calories, protein, carbs, and fat. Use 0 where appropriate.",
       );
+      return;
+    }
+    const nutrients = [draft.kcal, draft.protein, draft.carbs, draft.fat,
+      draft.sugar, draft.fiber, draft.sodium_mg];
+    if (nutrients.some((value) => value.trim() &&
+      (!Number.isFinite(Number(value)) || Number(value) < 0))) {
+      setProblem("Calories and nutrients must be zero or greater.");
+      return;
+    }
+    if (!draft.amount.trim() || !Number.isFinite(Number(draft.amount)) ||
+      Number(draft.amount) <= 0 || !draft.unit.trim()) {
+      setProblem("Enter an amount greater than zero and its unit.");
       return;
     }
     setProblem(null);
@@ -293,37 +311,31 @@ export function FoodComposer({
       );
     } else if (event.key === "Enter") {
       event.preventDefault();
+      if (searching) return;
       const match = matches[active];
       if (match) choose(match);
       else startNew();
     }
   }
 
-  return (
-    <form className="composer [&_.composer-datetime]:pb-0" onSubmit={submit}>
-      <div className={cn(formClassName, "composer-datetime [&_.row2]:items-start [&_input]:tabular-nums [&_+_.fields]:pt-4 max-[520px]:[&_.row2]:grid-cols-[minmax(0,_1fr)]")}>
-        <div className="row2 grid gap-3 grid-cols-[repeat(2,_minmax(0,_1fr))]">
-          <TextField
-            label="Date"
-            type="date"
-            value={day}
-            onChange={setDay}
-            disabled={saving}
-            required
-          />
-          <TextField
-            label="Time (Pacific)"
-            type="time"
-            value={at}
-            onChange={setAt}
-            disabled={saving}
-          />
-        </div>
+  const dateFields = (
+    <div className="composer-datetime grid gap-3 border-t border-solid border-border pt-4">
+      <div className="row2 grid grid-cols-2 gap-3 max-[520px]:grid-cols-1">
+        <TextField label="Date" type="date" value={day} onChange={setDay} disabled={saving} required />
+        <TextField label="Time (Pacific)" type="time" value={at} onChange={setAt} disabled={saving} />
       </div>
+      <p className="text-ui-label text-subtle leading-5">
+        {day === today ? "Leave time blank to use the current Pacific time."
+          : "Leave time blank to use noon as a placeholder."}
+      </p>
+    </div>
+  );
 
+  return (
+    <form className="composer [&_input]:min-h-11" onSubmit={submit}>
       {!draft && (
-        <>
-          <div className={formClassName}>
+        <div className={cn(formClassName, "gap-5")}>
+          <div className="grid gap-2">
             <label className={fieldClassName}>
               <span>What did you eat?</span>
               <input
@@ -331,7 +343,7 @@ export function FoodComposer({
                 autoFocus
                 type="text"
                 value={keyword}
-                placeholder="Search or type a new food"
+                placeholder="Search your foods or add a new one"
                 onChange={(event) => {
                   setKeyword(event.target.value);
                   setPicked(null);
@@ -339,153 +351,131 @@ export function FoodComposer({
                 onKeyDown={onSearchKey}
               />
             </label>
+            <p className="text-ui-label text-subtle leading-5">Choose a past food to use its nutrition and adjust your portion.</p>
           </div>
 
           {searchProblem && (
-            <p className="search-error text-[12px] text-warning [padding:0_24px_14px] max-[761px]:px-5" role="status">
+            <p className="search-error text-ui-label text-warning leading-5" role="status">
               Past foods couldn’t be loaded. You can still enter a new food.
             </p>
           )}
-          <div className="results [padding:0_12px_16px] max-[761px]:px-2 max-h-[310px] overflow-y-auto">
-            {!keyword && matches.length > 0 && (
-              <div className="section-head flex justify-between py-2 px-3 text-subtle text-[11px] font-[560]">
-                <span>Recent</span>
-              </div>
+          <div className="results grid gap-1" aria-busy={searching}>
+            <div className="section-head flex justify-between text-subtle text-ui-caption font-semibold pb-1">
+              <span>{keyword ? "Matching foods" : "Recent foods"}</span>
+              <span>kcal per portion</span>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto overscroll-contain -mx-2 px-2">
+              {matches.map((match, index) => (
+                <button
+                  key={match.path}
+                  type="button"
+                  disabled={searching}
+                  className={cn(
+                    "result flex items-center gap-3 w-full min-h-14 border border-solid border-transparent rounded-xl bg-transparent text-foreground p-3 text-left pointer-hover:hover:bg-popover",
+                    index === active && "active bg-secondary border-input",
+                  )}
+                  onClick={() => choose(match)}
+                >
+                  <span className="result-name flex-1 min-w-0 text-ui-body font-medium wrap-anywhere">{match.name}</span>
+                  <span className="result-kcal text-right tabular-nums font-semibold">{num(match.kcal)}</span>
+                  <span className="result-when shrink-0 text-right text-subtle text-ui-caption tabular-nums">{match.day.slice(5)}</span>
+                </button>
+              ))}
+            </div>
+            {searching && <p className="text-ui-label text-subtle py-2" role="status">Finding your foods…</p>}
+            {!searching && !matches.length && keyword && !searchProblem && (
+              <p className="text-ui-label text-subtle py-3">No past foods match this search.</p>
             )}
-            {matches.map((match, index) => (
-              <button
-                key={match.path}
-                type="button"
-                className={`result flex items-baseline gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-3 px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover${index === active ? " active" : ""}`}
-                onClick={() => choose(match)}
-              >
-                <span className="result-name [flex:1] min-w-0 text-[13px] wrap-anywhere [&_svg]:[vertical-align:-2px]">{match.name}</span>
-                <span className="result-kcal min-w-10 text-right tabular-nums [font:600_13px_var(--rounded)]">{num(match.kcal)}</span>
-                <span className="result-when w-9 shrink-0 text-right text-subtle text-[11px] tabular-nums">{match.day.slice(5)}</span>
-              </button>
-            ))}
             <button
               type="button"
-              className={`result flex items-baseline gap-3 w-full border-0 rounded-[14px] bg-none bg-transparent text-foreground py-3 px-3 text-left [&.active]:bg-secondary [&.newfood]:mt-1 [&.newfood]:border-t [&.newfood]:[border-top-style:solid] [&.newfood]:border-t-border [&.newfood]:rounded-[0_0_14px_14px] pointer-hover:[&:hover]:bg-popover newfood${active === matches.length ? " active" : ""}`}
+              className={cn(
+                "result newfood flex items-center gap-2 w-full min-h-11 rounded-xl border border-solid border-input bg-transparent text-foreground py-3 px-3 text-left text-ui-body pointer-hover:hover:bg-popover",
+                active === matches.length && "active bg-secondary",
+              )}
               onClick={startNew}
             >
-              <span className="result-name [flex:1] min-w-0 text-[13px] wrap-anywhere [&_svg]:[vertical-align:-2px]">
-                <IconAdd size={14} aria-hidden focusable="false" />
-                {keyword ? ` New food “${keyword.trim()}”` : " New food"}
-              </span>
+              <IconAdd size={16} aria-hidden focusable="false" />
+              <span>{keyword ? `New food “${keyword.trim()}”` : "New food"}</span>
             </button>
           </div>
-        </>
+          {dateFields}
+        </div>
       )}
       {draft && (
-        <div className={formClassName}>
-          <button
-            type="button"
-            className="back-to-search justify-self-start p-0 border-0 bg-none bg-transparent text-muted-foreground text-[12px] leading-5 underline decoration-[rgb(255_255_255_/_0.2)] underline-offset-4 pointer-hover:[&:hover]:text-foreground"
-            onClick={() => {
-              setDraft(null);
-              setProblem(null);
-            }}
-          >
-            Back to food search
-          </button>
-          <MealPicker value={draft.meal} onChange={set("meal")} />
-          <TextField
-            label="Name"
-            value={draft.name}
-            onChange={set("name")}
-            autoFocus={!draft.name}
-          />
-          <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
-            <TextField
-              label="Calories"
-              type="number"
-              value={draft.kcal}
-              onChange={set("kcal")}
-              scaled={Boolean(picked)}
-              autoFocus={Boolean(draft.name)}
-            />
-            <TextField
-              label="Amount"
-              type="number"
-              value={draft.amount}
-              onChange={setAmount}
-            />
-            <TextField label="Unit" value={draft.unit} onChange={set("unit")} />
-          </div>
-          <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
-            <TextField
-              label="Protein"
-              type="number"
-              value={draft.protein}
-              onChange={set("protein")}
-              scaled={Boolean(picked)}
-            />
-            <TextField
-              label="Carbs"
-              type="number"
-              value={draft.carbs}
-              onChange={set("carbs")}
-              scaled={Boolean(picked)}
-            />
-            <TextField
-              label="Fat"
-              type="number"
-              value={draft.fat}
-              onChange={set("fat")}
-              scaled={Boolean(picked)}
-            />
-          </div>
-          <details className="border-t [border-top-style:solid] border-t-border pt-3.5 [&_summary]:py-1 [&_summary]:leading-5">
-            <summary>Sugar, fibre, sodium, note</summary>
-            <div className={formClassName}>
-              <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
-                <TextField
-                  label="Sugar"
-                  type="number"
-                  value={draft.sugar}
-                  onChange={set("sugar")}
-                />
-                <TextField
-                  label="Fibre"
-                  type="number"
-                  value={draft.fiber}
-                  onChange={set("fiber")}
-                />
-                <TextField
-                  label="Sodium mg"
-                  type="number"
-                  value={draft.sodium_mg}
-                  onChange={set("sodium_mg")}
-                />
+        <>
+          <fieldset disabled={saving} className={cn(formClassName, "border-0 m-0 min-w-0 gap-5")}>
+            <div className="grid gap-3">
+              <button
+                type="button"
+                className="back-to-search justify-self-start min-h-11 border-0 bg-transparent text-muted-foreground px-0 text-ui-label pointer-hover:hover:text-foreground"
+                onClick={() => {
+                  setDraft(null);
+                  setProblem(null);
+                }}
+              >
+                Back to food search
+              </button>
+              <TextField label="Name" value={draft.name} onChange={set("name")} autoFocus required />
+              {picked && (
+                <p className="text-ui-label text-subtle">Using nutrition from {parseDay(picked.day).toLocaleDateString([], { month: "short", day: "numeric" })}.</p>
+              )}
+            </div>
+
+            <section className="grid gap-3 rounded-2xl border border-solid border-border bg-popover p-4" aria-label="Portion eaten">
+              <div>
+                <h3 className="text-ui-body font-semibold">Your portion</h3>
+                <p className="text-ui-label text-muted-foreground mt-1 leading-5">
+                  {picked ? "Changing the amount scales calories and every nutrient below."
+                    : "Enter totals for what you ate. Changing the amount does not multiply them."}
+                </p>
               </div>
-              <TextField
-                label="Private note"
-                value={draft.note}
-                onChange={set("note")}
-                hint="stays on this Mac"
-              />
+              <div className="row2 grid grid-cols-2 gap-3">
+                <TextField label="Amount" type="number" value={draft.amount} onChange={setAmount} required />
+                <TextField label="Unit" value={draft.unit} onChange={set("unit")} required />
+              </div>
+            </section>
+
+            <section className="grid gap-3" aria-label="Nutrition for your portion">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-ui-body font-semibold">Nutrition for your portion</h3>
+                <span className="text-ui-caption text-subtle">Macros in grams</span>
+              </div>
+              <TextField label="Calories" type="number" value={draft.kcal} onChange={set("kcal")} className={picked ? "text-protein" : undefined} required />
+              <div className="row3 grid grid-cols-3 gap-3 max-[381px]:gap-2">
+                <TextField label="Protein" type="number" value={draft.protein} onChange={set("protein")} className={picked ? "text-protein" : undefined} required />
+                <TextField label="Carbs" type="number" value={draft.carbs} onChange={set("carbs")} className={picked ? "text-protein" : undefined} required />
+                <TextField label="Fat" type="number" value={draft.fat} onChange={set("fat")} className={picked ? "text-protein" : undefined} required />
+              </div>
+              <p className="text-ui-label text-subtle">Include all three macros; enter 0 where appropriate.</p>
+            </section>
+            <MealPicker value={draft.meal} onChange={set("meal")} />
+            {dateFields}
+            <details className="border-t border-solid border-border pt-2 [&_summary]:min-h-11 [&_summary]:leading-5 [&_summary]:py-3">
+              <summary>Sugar, fibre, sodium, note</summary>
+              <div className="grid gap-4 pt-2">
+                <div className="row3 grid grid-cols-3 gap-3 max-[381px]:gap-2">
+                  <TextField label="Sugar" type="number" value={draft.sugar} onChange={set("sugar")} />
+                  <TextField label="Fibre" type="number" value={draft.fiber} onChange={set("fiber")} />
+                  <TextField label="Sodium mg" type="number" value={draft.sodium_mg} onChange={set("sodium_mg")} />
+                </div>
+                <p className="text-ui-caption text-subtle">Sugar and fibre in grams; sodium in milligrams.</p>
+                <TextField label="Private note" value={draft.note} onChange={set("note")} />
+                <p className="text-ui-caption text-subtle">This note stays in your journal and isn’t sent to Google.</p>
+              </div>
+            </details>
+          </fieldset>
+          <div className="sticky bottom-0 grid gap-3 border-t border-solid border-border bg-card px-6 py-4 max-[761px]:px-5">
+            {problem && (
+              <div className="consequence bg-warning-muted text-warning text-ui-label leading-5 py-3 px-3.5 rounded-xl" role="alert">
+                {problem}
+              </div>
+            )}
+            <div className="buttons flex items-center gap-2 [&_.primary]:flex-1 [&_button]:min-h-11">
+              <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>Cancel</Button>
+              <Button variant="primary" type="submit" disabled={saving}>{saving ? "Logging…" : "Log food"}</Button>
             </div>
-          </details>
-          <div className={"consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground calm"}>
-            {picked
-              ? `From ${picked.day}. Calories and every nutrient scale with the amount.`
-              : "Totals for the portion you ate. The amount does not multiply them."}
           </div>
-          {problem && (
-            <div className="consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground" role="alert">
-              {problem}
-            </div>
-          )}
-          <div className="buttons flex items-center gap-2 pt-2 [&_.primary]:[flex:1]">
-            <Button variant="primary" type="submit" disabled={saving}>
-              {saving ? "Logging…" : "Log food"}
-            </Button>
-            <Button variant="secondary" type="button" onClick={onClose}>
-              Cancel
-            </Button>
-          </div>
-        </div>
+        </>
       )}
     </form>
   );

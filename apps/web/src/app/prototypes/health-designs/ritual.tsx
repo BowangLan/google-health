@@ -5,7 +5,7 @@
  * Routine setup and manual check-ins live only in memory; record forms are separate.
  */
 import { useState } from "react";
-import { IconAdd, IconAgain, IconFood, IconNext, IconSync, IconWeight } from "@/lib/icons";
+import { IconAdd, IconAgain, IconFood, IconNext, IconSync, IconWeight } from "@/design-system/foundations/icons";
 import { FOOD_LIBRARY } from "./data";
 import { dateLabel, shiftDate, type DesignProps } from "./types";
 import "./ritual.css";

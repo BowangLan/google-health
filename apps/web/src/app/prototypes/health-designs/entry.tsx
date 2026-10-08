@@ -1,7 +1,7 @@
 /** Three fresh task-focused dark concepts on the existing route, via ?prototype=1&variant=D|E|F. */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { IconAdd, IconClose, IconPrev, IconNext, IconFood, IconWeight, IconSync, IconAgain } from "@/lib/icons";
+import { IconAdd, IconClose, IconPrev, IconNext, IconFood, IconWeight, IconSync, IconAgain } from "@/design-system/foundations/icons";
 import { CaptureVariant } from "./capture";
 import { NextVariant } from "./next";
 import { RitualVariant } from "./ritual";

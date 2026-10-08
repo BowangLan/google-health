@@ -3,8 +3,8 @@
  * Rounded system display / plain system body / monospaced allowance receipt.
  * Signature: a before→after allowance receipt, without scores, history charts, or a record-first home. */
 import { useState } from "react";
-import { IconCheck as CheckIcon, IconArrowRight as ArrowRightIcon, IconMinus as MinusIcon } from "@/lib/icons";
-import { IconAdd, IconAgain, IconClose, IconFood, IconLedger, IconNext, IconSync, IconWeight } from "@/lib/icons";
+import { IconCheck as CheckIcon, IconArrowRight as ArrowRightIcon, IconMinus as MinusIcon } from "@/design-system/foundations/icons";
+import { IconAdd, IconAgain, IconClose, IconFood, IconLedger, IconNext, IconSync, IconWeight } from "@/design-system/foundations/icons";
 import { FOOD_LIBRARY } from "./data";
 import { dateLabel, type DemoFood, type DemoTotals, type DesignProps, type Meal } from "./types";
 import "./next.css";

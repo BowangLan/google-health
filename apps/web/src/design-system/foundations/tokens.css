@@ -1,0 +1,90 @@
+/* Raw values live here. Product code chooses a semantic role instead. */
+@layer theme {
+  :root {
+    --ds-p-black: #000;
+    --ds-p-gray-1000: #09090b;
+    --ds-p-gray-975: #0c0c0e;
+    --ds-p-gray-950: #111113;
+    --ds-p-gray-925: #141416;
+    --ds-p-gray-900: #18181b;
+    --ds-p-gray-850: #212125;
+    --ds-p-gray-600: #52525b;
+    --ds-p-gray-500: #636366;
+    --ds-p-gray-450: #8b8b94;
+    --ds-p-gray-425: #8e8e93;
+    --ds-p-gray-400: #98989f;
+    --ds-p-gray-350: #a8a8b0;
+    --ds-p-gray-300: #b4b4bc;
+    --ds-p-gray-200: #e5e5ea;
+    --ds-p-gray-175: #e4e4e7;
+    --ds-p-gray-100: #f4f4f5;
+    --ds-p-gray-50: #fafafa;
+    --ds-p-white: #fff;
+    --ds-p-amber: #f5b85c;
+    --ds-p-amber-dark: #2a2114;
+    --ds-p-coral: #ff6961;
+    --ds-p-coral-light: #ffb4ae;
+    --ds-p-pink: #ff375f;
+    --ds-p-pink-light: #ff5a7a;
+    --ds-p-pink-dark: #d81b4a;
+    --ds-p-cyan: #64d2ff;
+    --ds-p-orange: #ff9f0a;
+    --ds-p-yellow: #ffd60a;
+    --ds-p-purple: #bf5af2;
+    --ds-p-red: #ff453a;
+    --ds-p-green: #30d158;
+    --ds-p-white-03: rgb(255 255 255 / 0.03);
+    --ds-p-white-035: rgb(255 255 255 / 0.035);
+    --ds-p-white-05: rgb(255 255 255 / 0.05);
+    --ds-p-white-06: rgb(255 255 255 / 0.06);
+    --ds-p-white-07: rgb(255 255 255 / 0.07);
+    --ds-p-white-08: rgb(255 255 255 / 0.08);
+    --ds-p-white-09: rgb(255 255 255 / 0.09);
+    --ds-p-white-10: rgb(255 255 255 / 0.1);
+    --ds-p-white-12: rgb(255 255 255 / 0.12);
+    --ds-p-white-13: rgb(255 255 255 / 0.13);
+    --ds-p-white-20: rgb(255 255 255 / 0.2);
+    --ds-p-white-22: rgb(255 255 255 / 0.22);
+    --ds-p-white-30: rgb(255 255 255 / 0.3);
+    --ds-p-white-35: rgb(255 255 255 / 0.35);
+    --ds-p-white-45: rgb(255 255 255 / 0.45);
+    --ds-p-white-75: rgb(255 255 255 / 0.75);
+    --ds-p-black-14: rgb(0 0 0 / 0.14);
+    --ds-p-black-40: rgb(0 0 0 / 0.4);
+    --ds-p-black-50: rgb(0 0 0 / 0.5);
+    --ds-p-black-55: rgb(0 0 0 / 0.55);
+    --ds-p-black-80: rgb(0 0 0 / 0.8);
+    --ds-p-coral-08: rgb(255 105 97 / 0.08);
+    --ds-p-coral-14: rgb(255 105 97 / 0.14);
+    --ds-p-coral-24: rgb(255 105 97 / 0.24);
+    --ds-p-amber-30: rgb(245 184 92 / 0.3);
+    --ds-p-cyan-30: rgb(100 210 255 / 0.3);
+    --ds-p-canvas-60: rgb(9 9 11 / 0.6);
+    --ds-p-canvas-72: rgb(9 9 11 / 0.72);
+
+    --ds-p-font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --ds-p-font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+    --ds-p-font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --ds-p-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --ds-p-space: 4px;
+    --ds-p-radius-5: 5px;
+    --ds-p-radius-8: 8px;
+    --ds-p-radius-10: 10px;
+    --ds-p-radius-12: 12px;
+    --ds-p-radius-14: 14px;
+    --ds-p-radius-16: 16px;
+    --ds-p-radius-22: 22px;
+    --ds-p-radius-24: 24px;
+    --ds-p-radius-30: 30px;
+    --ds-p-radius-full: 9999px;
+    --ds-p-time-fast: 140ms;
+    --ds-p-time-normal: 200ms;
+    --ds-p-time-spring: 560ms;
+    --ds-p-time-island: 670ms;
+    --ds-p-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    /* Critically damped spring, response 0.35s. */
+    --ds-p-ease-spring: linear(0, 0.0667, 0.2048, 0.3577, 0.4991, 0.6189, 0.7154, 0.7905, 0.8475, 0.89, 0.9213, 0.9441, 0.9605, 0.9722, 0.9805, 0.9864, 0.9905, 0.9934, 0.9955, 0.9969, 0.9978, 0.9985, 0.999, 0.9993, 1);
+    /* Damping 0.78, response 0.42s. Reserved for island expansion. */
+    --ds-p-ease-island: linear(0, 0.0419, 0.1416, 0.2692, 0.4039, 0.5325, 0.6475, 0.7452, 0.8248, 0.8871, 0.934, 0.9678, 0.991, 1.006, 1.0146, 1.0188, 1.0199, 1.0191, 1.0171, 1.0145, 1.0118, 1.0093, 1.007, 1.005, 1.0035, 1.0022, 1.0013, 1.0006, 1.0002, 0.9999, 0.9997, 0.9996, 1);
+  }
+}

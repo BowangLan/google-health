@@ -1,5 +1,5 @@
 import { MEALS, MEAL_NAME } from "@/lib/format";
-import { Segmented } from "@/components/forms/segmented";
+import { Segmented } from "@/design-system/patterns/segmented";
 
 export function MealPicker({
   value,

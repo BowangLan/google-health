@@ -1,18 +1,18 @@
-import { cn } from "@/lib/utils";
-import { segmentedClassName } from "@/components/forms/form-styles";
-import { Button } from "@/components/button";
+import { Surface } from "@/design-system/primitives/surface";
+import { cn } from "@/design-system/lib/cn";
+import { segmentedClassName } from "@/design-system/patterns/form-styles";
+import { Button } from "@/design-system/primitives/button";
 import { useEffect, useMemo, useState } from "react";
 import {
   IconWeight,
   IconFood,
   IconPulse,
   IconBurned,
-} from "@/lib/icons";
+} from "@/design-system/foundations/icons";
 import * as api from "@/lib/api";
 import { centredMean, meanOfLogged, ratePerWeek } from "@/features/trends/lib/series";
 import { makeDayScale } from "@/features/trends/lib/scale";
 import { RANGES } from "@/lib/navigation";
-import { budget } from "@/lib/budget";
 import { num, parseDay } from "@/lib/format";
 import type { Series } from "@/lib/types";
 import { WeightChart } from "@/features/trends/components/charts/weight-chart";
@@ -42,13 +42,13 @@ function Stat({
   return (
     <div className={cn(
       "stat min-w-0 p-4 bg-card border border-solid border-border rounded-[18px] max-[381px]:p-3",
-      "[&.budget]:col-span-full [&.budget.ok_.stat-value]:[color:#30d158] [&.budget.closing_.stat-value]:[color:#ffd60a]",
+      "[&.budget]:col-span-full [&.budget.ok_.stat-value]:[color:var(--ds-color-positive)] [&.budget.closing_.stat-value]:[color:var(--ds-color-caution)]",
       "[&.calories_.stat-label_svg]:text-energy [&.budget_.stat-label_svg]:text-energy [&.budget.over_.stat-value]:text-over [&.protein_.stat-label_svg]:text-protein",
       "min-[762px]:[&.budget]:grid min-[762px]:[&.budget]:grid-cols-[auto_auto_minmax(0,_1fr)] min-[762px]:[&.budget]:items-center min-[762px]:[&.budget]:gap-x-4",
       "min-[762px]:[&.budget]:py-3 min-[762px]:[&.budget_.stat-value]:mt-0 min-[762px]:[&.budget_.stat-hint]:mt-0 min-[762px]:[&.budget_.stat-hint]:text-right",
       tone
     )}>
-      <div className="stat-label flex items-center gap-1.5 text-[12px] font-semibold [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:text-weight max-[381px]:text-[11px] max-[381px]:whitespace-nowrap">
+      <div className="stat-label flex items-center gap-1.5 text-ui-label font-semibold [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:text-weight max-[381px]:text-ui-caption max-[381px]:whitespace-nowrap">
         {tone.startsWith("budget") ? (
           <IconBurned aria-hidden />
         ) : tone === "calories" ? (
@@ -61,12 +61,12 @@ function Stat({
         <span>{label}</span>
       </div>
       <div className={cn(
-        "stat-value mt-2 [font:650_23px/1.15_var(--rounded)] tracking-[-0.02em] whitespace-nowrap",
-        "[&_small]:[font:500_12px_var(--sans)] [&_small]:text-muted-foreground [&_small]:tracking-[0]",
+        "stat-value mt-2 [font:650_23px/1.15_var(--ds-font-numeric)] tracking-[-0.02em] whitespace-nowrap",
+        "[&_small]:[font:500_12px_var(--ds-font-body)] [&_small]:text-muted-foreground [&_small]:tracking-[0]",
         "min-[1181px]:max-[1441px]:text-[20px]"
       )}>
         {value === "No data" ? (
-          <span className="stat-none [font:500_15px_var(--sans)] text-subtle">No data</span>
+          <span className="stat-none [font:500_15px_var(--ds-font-body)] text-subtle">No data</span>
         ) : (
           <>
             {value.split(" ")[0]}
@@ -74,33 +74,9 @@ function Stat({
           </>
         )}
       </div>
-      <div className="stat-hint mt-1 text-subtle text-[11.5px] leading-4 text-pretty">{hint ?? "\u00A0"}</div>
+      <div className="stat-hint mt-1 text-subtle text-ui-detail leading-4 text-pretty">{hint ?? "\u00A0"}</div>
     </div>
   );
-}
-
-/**
- * Calories left today: burned so far, minus eaten, minus the deficit goal.
- * Burned keeps rising through the day, so the budget does too.
- */
-function todayBudget(series: Series): {
-  value: string;
-  tone: string;
-  hint: string;
-} {
-  const row = series.rows.find((r) => r.day === series.today);
-  const deficit = series.targets.daily_deficit_kcal ?? 0;
-  if (!row || row.burned === null)
-    return { value: "No data", tone: "budget", hint: "Burned not pulled yet" };
-  const eaten = row.kcal ?? 0;
-  const { left, state } = budget(row.burned, eaten, deficit);
-  const parts = [`${num(row.burned)} burned`, `${num(eaten)} eaten`];
-  if (deficit > 0) parts.push(`${num(deficit)} deficit`);
-  return {
-    value: left >= 0 ? `${num(left)} kcal left` : `${num(-left)} kcal over`,
-    tone: "budget " + state,
-    hint: parts.join(", "),
-  };
 }
 
 export function TrendsSection({
@@ -206,9 +182,9 @@ export function TrendsSection({
     return (
       <section className="trends grid gap-3 min-w-0 [&[aria-busy=true]_.chart-panel]:opacity-[0.7]" aria-label="Trends">
         <div className={cn(
-          "errorcard border border-solid border-[rgb(245_184_92_/_0.3)] bg-warning-muted rounded-[var(--r-tile)] p-5.5",
-          "grid gap-3.5 text-[13px] [&_h2]:text-[16px] [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
-          "[&_pre]:[font:11.5px/1.6_var(--mono)] [&_pre]:text-muted-foreground [&_.secondary]:justify-self-start"
+          "errorcard border border-solid border-[var(--ds-color-warning-border)] bg-warning-muted rounded-tile p-5.5",
+          "grid gap-3.5 text-ui-body [&_h2]:text-[16px] [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
+          "[&_pre]:[font:11.5px/1.6_var(--ds-font-code)] [&_pre]:text-muted-foreground [&_.secondary]:justify-self-start"
         )} role="alert">
           <h2>Couldn’t load trends.</h2>
           <pre>{problem}</pre>
@@ -224,25 +200,25 @@ export function TrendsSection({
   if (!series || !scale || !stats || series.days !== days)
     return (
       <section className="trends grid gap-3 min-w-0 [&[aria-busy=true]_.chart-panel]:opacity-[0.7]" aria-label="Trends">
-        <div className="trends-bar flex items-center gap-3 min-h-[36px] [&_h2]:text-[15px] [&_h2]:tracking-[-0.01em] max-[761px]:flex-wrap">
+        <div className="trends-bar flex items-center gap-3 min-h-[36px] [&_h2]:text-ui-subheading [&_h2]:tracking-[-0.01em] max-[761px]:flex-wrap">
           <h2>Trends</h2>
           {rangeControl}
         </div>
         <div
           className={cn(
-            "skeleton-stats grid grid-cols-[repeat(4,_minmax(0,_1fr))] gap-3 [&_i]:block [&_i]:bg-card [&_i]:border [&_i:first-child]:col-span-full [&_i:first-child]:h-14",
+            "skeleton-stats grid grid-cols-[repeat(4,_minmax(0,_1fr))] gap-3 [&_i]:block [&_i]:bg-card [&_i]:border ",
             "[&_i]:border-solid [&_i]:border-border [&_i]:animate-[breathe_1.6s_ease-in-out_infinite] [&_i]:h-24",
             "[&_i]:rounded-[18px] max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))]",
-            "max-[761px]:[&_i:first-child]:col-span-full"
+            ""
           )}
           role="status"
           aria-label="Loading trends"
         >
-          {[0, 1, 2, 3, 4].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <i key={i} />
           ))}
         </div>
-        <div className="chart-skeleton block bg-card border border-solid border-border animate-[breathe_1.6s_ease-in-out_infinite] h-155 rounded-[var(--r-tile)]" />
+        <div className="chart-skeleton block bg-card border border-solid border-border animate-[breathe_1.6s_ease-in-out_infinite] h-155 rounded-tile" />
       </section>
     );
   const inRange =
@@ -250,7 +226,6 @@ export function TrendsSection({
       ? selectedDay
       : null;
 
-  const budget = todayBudget(series);
   const rate = stats.rate === null ? null : Number(stats.rate.toFixed(2));
   const direction =
     rate === null || rate === 0 ? "steady" : rate > 0 ? "up" : "down";
@@ -264,8 +239,8 @@ export function TrendsSection({
 
   return (
     <section className="trends grid gap-3 min-w-0 [&[aria-busy=true]_.chart-panel]:opacity-[0.7]" aria-label="Trends" aria-busy={loading}>
-      <div className="trends-bar flex items-center gap-3 min-h-[36px] [&_h2]:text-[15px] [&_h2]:tracking-[-0.01em] max-[761px]:flex-wrap">
-        <span className="range-dates text-subtle text-[12px] max-[761px]:w-full">
+      <div className="trends-bar flex items-center gap-3 min-h-[36px] [&_h2]:text-ui-subheading [&_h2]:tracking-[-0.01em] max-[761px]:flex-wrap">
+        <span className="range-dates text-subtle text-ui-label max-[761px]:w-full">
           {parseDay(series.since).toLocaleDateString([], {
             day: "numeric",
             month: "short",
@@ -280,15 +255,8 @@ export function TrendsSection({
         {rangeControl}
       </div>
 
-      {/* Range summaries stay independent of the selected day's readings.
-          The budget is always today's, whatever day is selected. */}
+      {/* Range summaries describe this whole interval; the journal owns day-specific values. */}
       <div className="stats grid grid-cols-[repeat(4,_minmax(0,_1fr))] gap-3 max-[761px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
-        <Stat
-          value={budget.value}
-          label="Budget today"
-          tone={budget.tone}
-          hint={budget.hint}
-        />
         <Stat
           value={
             stats.latest
@@ -333,21 +301,21 @@ export function TrendsSection({
           hint={`Over ${stats.protein.days} days`}
         />
       </div>
-      <section
+      <Surface
         className={cn(
-          "tile min-w-0 bg-card border border-solid border-border rounded-[var(--r-tile)]",
-          "shadow-[inset_0_1px_0_rgb(255_255_255_/_0.035)] chart-panel pb-1 [transition:opacity_200ms_ease]"
+          "tile",
+          "chart-panel pb-1 [transition:opacity_var(--ds-duration-normal)_ease]"
         )}
         aria-label="Weight and nutrition charts"
       >
-        <div className="chart-panel-heading flex justify-between items-center gap-3 [padding:16px_18px_0] [&_h3]:text-[13px]">
+        <div className="chart-panel-heading flex justify-between items-center gap-3 [padding:16px_18px_0] [&_h3]:text-ui-body">
           <h3>Weight & nutrition</h3>
-          <span className="chart-key inline-flex items-center gap-[7px] text-subtle text-[11.5px] [&_i]:w-4 [&_i]:h-0.5 [&_i]:rounded-[2px] [&_i]:bg-weight">
+          <span className="chart-key inline-flex items-center gap-[7px] text-subtle text-ui-detail [&_i]:w-4 [&_i]:h-0.5 [&_i]:rounded-[2px] [&_i]:bg-weight">
             <i />
             7-day average
           </span>
         </div>
-        <div className="dayread flex items-center flex-wrap gap-y-1.5 gap-x-4 min-h-[40px] [margin:12px_18px_4px] py-2.5 px-3 rounded-[12px] border border-solid border-border bg-popover text-[12px]" aria-live="polite">
+        <div className="dayread flex items-center flex-wrap gap-y-1.5 gap-x-4 min-h-[40px] [margin:12px_18px_4px] py-2.5 px-3 rounded-lg border border-solid border-border bg-popover text-ui-label" aria-live="polite">
           <div className="dayread-head flex gap-2.5 font-semibold">
             {shown
               ? parseDay(shown.day).toLocaleDateString([], {
@@ -412,14 +380,14 @@ export function TrendsSection({
             unit="grams"
           />
         </div>
-        <p className="viz-caption border-t [border-top-style:solid] border-t-border mt-3 [padding:14px_18px_14px] text-subtle text-[11.5px] leading-[1.65]">
+        <p className="viz-caption border-t [border-top-style:solid] border-t-border mt-3 [padding:14px_18px_14px] text-subtle text-ui-detail leading-[1.65]">
           <span className="block max-w-[80ch]">
           Click a chart to open that day. Logged intake and measured weight are
           two records side by side, not cause and effect: weight moves with
           hydration, sleep and time of day.
           </span>
         </p>
-      </section>
+      </Surface>
     </section>
   );
 }

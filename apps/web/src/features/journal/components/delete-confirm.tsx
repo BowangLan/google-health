@@ -1,4 +1,4 @@
-import { Button } from "@/components/button";
+import { Button } from "@/design-system/primitives/button";
 import { useState } from "react";
 import * as api from "@/lib/api";
 import type { FoodRow, Kind, WeightRow } from "@/lib/types";
@@ -31,7 +31,7 @@ export function DeleteConfirm({ kind, record, title, onDone, onCancel }: {
   }
 
   return (
-    <div className="confirm [&_.buttons]:[padding:4px_0_0] p-6 grid gap-5 text-[13px] leading-[1.7] max-[761px]:p-5">
+    <div className="confirm [&_.buttons]:[padding:4px_0_0] p-6 grid gap-5 text-ui-body leading-[1.7] max-[761px]:p-5">
       <div>
         {problem ?? (synced
           ? `Delete “${title}”? The local file goes now. Google Health keeps it until your next push, which will delete it there too.`
@@ -39,7 +39,7 @@ export function DeleteConfirm({ kind, record, title, onDone, onCancel }: {
       </div>
       <div className="buttons flex items-center justify-end gap-2.5 pt-2 [&_.primary]:[flex:1]">
         {!problem && (
-          <Button variant="secondary" className="danger" type="button" disabled={busy} onClick={remove}>
+          <Button variant="danger" className="" type="button" disabled={busy} onClick={remove}>
             Delete
           </Button>
         )}

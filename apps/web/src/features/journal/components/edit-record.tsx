@@ -1,11 +1,11 @@
-import { formClassName } from "@/components/forms/form-styles";
-import { Button } from "@/components/button";
+import { formClassName } from "@/design-system/patterns/form-styles";
+import { Button } from "@/design-system/primitives/button";
 import { useState } from "react";
 import * as api from "@/lib/api";
 import { clock } from "@/lib/format";
 import type { FoodRow, Kind, WeightRow } from "@/lib/types";
 import { MealPicker } from "@/features/journal/components/meal-picker";
-import { TextField } from "@/components/forms/text-field";
+import { TextField } from "@/design-system/patterns/text-field";
 import { UnitPicker } from "@/features/journal/components/unit-picker";
 
 const text = (value: number | null | undefined) =>
@@ -134,28 +134,28 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
           />
           <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
             <TextField label="Calories" type="number" value={values.kcal ?? ""}
-              onChange={set("kcal")} scaled={rescaled} />
+              onChange={set("kcal")} className={rescaled ? "text-protein" : undefined} />
             <TextField label="Amount" type="number" value={values.amount ?? ""} onChange={setAmount} />
             <TextField label="Unit" value={values.unit ?? ""} onChange={set("unit")} />
           </div>
           <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
             <TextField label="Protein" type="number" value={values.protein ?? ""}
-              onChange={set("protein")} scaled={rescaled} />
+              onChange={set("protein")} className={rescaled ? "text-protein" : undefined} />
             <TextField label="Carbs" type="number" value={values.carbs ?? ""}
-              onChange={set("carbs")} scaled={rescaled} />
+              onChange={set("carbs")} className={rescaled ? "text-protein" : undefined} />
             <TextField label="Fat" type="number" value={values.fat ?? ""}
-              onChange={set("fat")} scaled={rescaled} />
+              onChange={set("fat")} className={rescaled ? "text-protein" : undefined} />
           </div>
           <div className="row3 grid gap-3 grid-cols-[repeat(3,_minmax(0,_1fr))] max-[761px]:gap-2">
             <TextField label="Sugar" type="number" value={values.sugar ?? ""}
-              onChange={set("sugar")} scaled={rescaled} />
+              onChange={set("sugar")} className={rescaled ? "text-protein" : undefined} />
             <TextField label="Fibre" type="number" value={values.fiber ?? ""}
-              onChange={set("fiber")} scaled={rescaled} />
+              onChange={set("fiber")} className={rescaled ? "text-protein" : undefined} />
             <TextField label="Sodium mg" type="number" value={values.sodium_mg ?? ""}
-              onChange={set("sodium_mg")} scaled={rescaled} />
+              onChange={set("sodium_mg")} className={rescaled ? "text-protein" : undefined} />
           </div>
           {rescaled && (
-            <div className="consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground calm">
+            <div className="consequence bg-warning-muted text-warning text-ui-label leading-[1.65] py-3 px-3.5 rounded-notice [&.calm]:bg-popover [&.calm]:text-muted-foreground calm">
               Scaled from {initial.amount} to {values.amount} {values.unit || "serving"}.
               Every nutrient scales, including any not shown here. Type over a
               figure to override it.
@@ -174,9 +174,9 @@ export function EditRecord({ kind, record, onDone, onCancel }: {
         </>
       )}
 
-      {problem && <div className="consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground">{problem}</div>}
+      {problem && <div className="consequence bg-warning-muted text-warning text-ui-label leading-[1.65] py-3 px-3.5 rounded-notice [&.calm]:bg-popover [&.calm]:text-muted-foreground">{problem}</div>}
       {!problem && dirty && (
-        <div className={`consequence bg-warning-muted text-warning text-[12px] leading-[1.65] py-3 px-3.5 rounded-[14px] [&.calm]:bg-popover [&.calm]:text-muted-foreground${record.state === "synced" && kind === "food" ? "" : " calm"}`}>
+        <div className={`consequence bg-warning-muted text-warning text-ui-label leading-[1.65] py-3 px-3.5 rounded-notice [&.calm]:bg-popover [&.calm]:text-muted-foreground${record.state === "synced" && kind === "food" ? "" : " calm"}`}>
           {consequence}
         </div>
       )}

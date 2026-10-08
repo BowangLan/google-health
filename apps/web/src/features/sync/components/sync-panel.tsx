@@ -1,10 +1,10 @@
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/button";
+import { cn } from "@/design-system/lib/cn";
+import { Button } from "@/design-system/primitives/button";
 import { useState } from "react";
 import type { SyncFailure, SyncRun, SyncTrigger } from "@/features/sync/hooks/use-sync";
 import { useNow } from "@/features/sync/hooks/use-now";
 import { attentionItems, changes, count, describeSync, label, localCounts, when } from "@/features/sync/lib/status";
-import { IconSync } from "@/lib/icons";
+import { IconSync } from "@/design-system/foundations/icons";
 import type { Overview, SyncDiff, SyncOptions, SyncRow } from "@/lib/types";
 
 /* ---------- panel ---------- */
@@ -13,7 +13,7 @@ function Diffs({ diff }: { diff: SyncDiff[] }) {
   return (
     <>
       {diff.map((d) => (
-        <span className="sync-diff [font:11px/1.5_var(--mono)] text-muted-foreground wrap-anywhere" key={d.field}>
+        <span className="sync-diff [font:11px/1.5_var(--ds-font-code)] text-muted-foreground wrap-anywhere" key={d.field}>
           {d.field}: {d.local} here, {d.remote} in Google Health
         </span>
       ))}
@@ -25,9 +25,9 @@ function IncomingRow({ row }: { row: SyncRow }) {
   return (
     <li>
       <span className={cn(
-        "sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
-        "text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
-        "[&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive"
+        "sync-tag mt-px justify-self-start rounded-capsule py-0 px-2 [background:var(--ds-color-control-hover)] text-muted-foreground",
+        "text-[10.5px] font-control leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
+        "[&.bad]:[background:var(--ds-color-danger-hover)] [&.bad]:text-destructive"
       )}>{label(row.tag)}</span>
       <div className="sync-row-body grid gap-[3px] min-w-0">
         <span className="sync-row-text text-foreground wrap-anywhere [&_time]:mr-[7px] [&_time]:text-subtle">
@@ -94,47 +94,51 @@ export function SyncPanel({
   const canPush = !busy && local.blocked === 0 && (local.pushable > 0 || deleting);
 
   return (
-    <div className="sync-panel grid [&_>_section:last-child]:border-b-0">
-      <header className={"sync-head flex justify-between items-start gap-4 py-5 px-6 max-[761px]:px-5 max-[421px]:flex-wrap border-b [border-bottom-style:solid] border-b-border [&_strong]:block [&_strong]:[font:650_20px/1.2_var(--display)] [&_strong]:tracking-[-0.02em] [&_strong_span]:text-subtle [&_strong_span]:font-normal [&_strong_span]:text-[15px] [&.warn_strong]:text-warning [&_p]:mt-1.5 [&_p]:text-muted-foreground [&_p]:text-[12.5px] [&_p]:max-w-[46ch] [&_p]:wrap-anywhere [&_.secondary]:shrink-0 " + summary.tone}>
-        <div className="min-w-0 flex-1 max-[421px]:basis-full">
+    <div className="sync-panel grid [&_>_section:last-child]:border-b-0" aria-busy={busy}>
+      <header className={"sync-head grid gap-5 py-6 px-6 max-[761px]:px-5 border-b border-solid border-border [&_strong]:block [&_strong]:[font:650_23px/1.2_var(--ds-font-display)] [&_strong]:tracking-[-0.02em] [&_strong_span]:text-subtle [&_strong_span]:font-normal [&_strong_span]:text-[14px] [&.warn_strong]:text-warning [&_p]:mt-2 [&_p]:text-muted-foreground [&_p]:text-ui-body [&_p]:leading-5 [&_p]:max-w-[46ch] [&_p]:wrap-anywhere " + summary.tone}>
+        <div className="min-w-0" role="status" aria-live="polite" aria-atomic="true">
           <strong>
             {summary.label}
             {summary.brief && <span> · {summary.brief}</span>}
           </strong>
           <p>{summary.detail}</p>
         </div>
-        <Button
-          variant="secondary"
-          type="button"
-          disabled={busy}
-          onClick={() => void onSync({ pull: true })}
-        >
-          <IconSync size={14} aria-hidden className={busy ? "spin animate-[spin_900ms_linear_infinite]" : undefined} />
-          {busy ? "Syncing…" : "Sync now"}
-        </Button>
+        <div className="grid gap-2.5">
+          <Button
+            variant="secondary"
+            type="button"
+            disabled={busy}
+            className="min-h-11 w-full"
+            onClick={() => void onSync({ pull: true })}
+          >
+            <IconSync size={14} aria-hidden className={busy ? "spin animate-[spin_900ms_linear_infinite]" : undefined} />
+            {busy ? "Syncing…" : "Sync now"}
+          </Button>
+          <p className="!mt-0 text-center !text-ui-label">Checks Google Health and pulls updates into your journal.</p>
+        </div>
       </header>
 
       {attention.length > 0 && (
         <section className={cn(
-          "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
-          "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
+          "sync-section grid gap-4 py-5 px-6 max-[761px]:px-5 border-b border-solid border-border bg-warning-muted [&_h3]:flex [&_h3]:items-baseline",
+          "[&_h3]:gap-2 [&_h3]:text-ui-subheading [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-ui-label",
           "[&_.text-action]:justify-self-start"
         )} aria-label="Needs attention">
           <h3>
             Needs attention <span>{attention.length}</span>
           </h3>
-          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
+          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-ui-label [&_li]:leading-[1.6]">
             {attention.map((item) => (
               <li key={item.key}>
                 <span className={cn(
-                  "sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground",
-                  "text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
-                  "[&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive warn"
+                  "sync-tag mt-px justify-self-start rounded-capsule py-0 px-2 [background:var(--ds-color-control-hover)] text-muted-foreground",
+                  "text-[10.5px] font-control leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning",
+                  "[&.bad]:[background:var(--ds-color-danger-hover)] [&.bad]:text-destructive warn"
                 )}>{item.label}</span>
                 <div className="sync-row-body grid gap-[3px] min-w-0">
                   <span className="sync-row-text text-foreground wrap-anywhere [&_time]:mr-[7px] [&_time]:text-subtle">{item.text}</span>
                   <Diffs diff={item.diff} />
-                  {item.advice && <span className="sync-advice text-subtle text-[11.5px] leading-[1.5]">{item.advice}</span>}
+                  {item.advice && <span className="sync-advice text-subtle text-ui-detail leading-[1.5]">{item.advice}</span>}
                 </div>
               </li>
             ))}
@@ -150,15 +154,16 @@ export function SyncPanel({
       )}
 
       <section className={cn(
-        "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
-        "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
+        "sync-section grid gap-4 py-6 px-6 max-[761px]:px-5 border-b border-solid border-border [&_h3]:flex [&_h3]:items-baseline",
+        "[&_h3]:gap-2 [&_h3]:text-ui-subheading [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-ui-label",
         "[&_.text-action]:justify-self-start"
       )} aria-label="To Google Health">
-        <h3>
-          To Google Health {waiting > 0 && <span>{waiting}</span>}
-        </h3>
+        <div className="grid gap-1.5">
+          <h3>Review changes {waiting > 0 && <span>{waiting}</span>}</h3>
+          <p className="text-ui-label leading-5 text-muted-foreground">To Google Health. Local edits and deletions are sent only when you push.</p>
+        </div>
         {waiting === 0 ? (
-          <p className="sync-empty text-subtle text-[12px] leading-[1.55] max-w-[52ch]">
+          <p className="sync-empty text-subtle text-ui-label leading-[1.55] max-w-[52ch]">
             Nothing waiting. New entries are sent as you log them. Edits and
             deletions collect here until you push.
           </p>
@@ -173,24 +178,24 @@ export function SyncPanel({
               if (rows.length === 0) return null;
               const more = c.new + c.edited + c.deleted - rows.length;
               return (
-                <div className="sync-group [&_h4]:mb-[7px] [&_h4]:text-subtle [&_h4]:text-[11px] [&_h4]:font-[560]" key={c.kind}>
+                <div className="sync-group [&_h4]:mb-[7px] [&_h4]:text-subtle [&_h4]:text-ui-caption [&_h4]:font-[560]" key={c.kind}>
                   <h4>{c.kind === "food" ? "Food" : "Weight"}</h4>
-                  <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
+                  <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-ui-label [&_li]:leading-[1.6]">
                     {rows.map(([tag, text], index) => (
                       <li key={`${tag}-${index}-${text}`}>
-                        <span className={"sync-tag mt-px justify-self-start rounded-full py-0 px-2 [background:rgb(255_255_255_/_0.08)] text-muted-foreground text-[10.5px] font-[590] leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning [&.bad]:[background:rgb(255_105_97_/_0.14)] [&.bad]:text-destructive" + (tag === "delete" ? " bad" : "")}>{tag}</span>
+                        <span className={"sync-tag mt-px justify-self-start rounded-capsule py-0 px-2 [background:var(--ds-color-control-hover)] text-muted-foreground text-[10.5px] font-control leading-[18px] whitespace-nowrap [&.warn]:bg-warning-muted [&.warn]:text-warning [&.bad]:[background:var(--ds-color-danger-hover)] [&.bad]:text-destructive" + (tag === "delete" ? " bad" : "")}>{tag}</span>
                         <span className="sync-row-text text-foreground wrap-anywhere [&_time]:mr-[7px] [&_time]:text-subtle">{text}</span>
                       </li>
                     ))}
                   </ul>
-                  {more > 0 && <p className="sync-hint text-subtle text-[11.5px] leading-[1.5]">and {more} more</p>}
+                  {more > 0 && <p className="sync-hint text-subtle text-ui-detail leading-[1.5]">and {more} more</p>}
                 </div>
               );
             })}
             {local.deletions > 0 && (
               <label className={cn(
-                "sync-check flex items-start gap-2.5 [&_input]:mt-0.5 [&_input]:shrink-0 text-muted-foreground text-[12px] [&_input]:w-[15px] [&_input]:h-[15px]",
-                "[&_input]:min-h-0 [&_input]:mx-0 [&_input]:mb-0 [&_input]:[accent-color:var(--accent)]"
+                "sync-check flex items-start gap-2.5 [&_input]:mt-0.5 [&_input]:shrink-0 text-muted-foreground text-ui-label [&_input]:w-[15px] [&_input]:h-[15px]",
+                "[&_input]:min-h-0 [&_input]:mx-0 [&_input]:mb-0 [&_input]:[accent-color:var(--ds-color-action)]"
               )}>
                 <input
                   type="checkbox"
@@ -201,18 +206,19 @@ export function SyncPanel({
               </label>
             )}
             {deletionsHeld && !alsoDelete && (
-              <p className="sync-hint text-subtle text-[11.5px] leading-[1.5]">The last push left the deletions in place. Tick the box to confirm them.</p>
+              <p className="sync-hint text-subtle text-ui-detail leading-[1.5]">The last push left the deletions in place. Tick the box to confirm them.</p>
             )}
-            <div className="sync-actions flex items-center flex-wrap gap-3 pt-0.5">
+            <div className="sync-actions grid gap-2.5 pt-1">
               <Button
                 variant="primary"
                 type="button"
                 disabled={!canPush}
+                className="min-h-11 w-full"
                 onClick={() => void onSync({ pull: true, push: true, yes: deleting })}
               >
                 {pushLabel}
               </Button>
-              <span className="sync-hint text-subtle text-[11.5px] leading-[1.5]">
+              <span className="sync-hint text-subtle text-ui-detail leading-[1.5]">
                 {local.blocked > 0
                   ? "Resolve the items above first."
                   : "Pulls first, then sends. Conflicts are kept, never overwritten."}
@@ -224,8 +230,8 @@ export function SyncPanel({
 
       {last && (incoming.length > 0 || kept.length > 0) && (
         <section className={cn(
-          "sync-section grid gap-3 py-4.5 px-6 max-[761px]:px-5 border-b [border-bottom-style:solid] border-b-border [&_h3]:flex [&_h3]:items-baseline",
-          "[&_h3]:gap-2 [&_h3]:text-[13px] [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-[11.5px]",
+        "sync-section grid gap-4 py-5 px-6 max-[761px]:px-5 border-b border-solid border-border [&_h3]:flex [&_h3]:items-baseline",
+          "[&_h3]:gap-2 [&_h3]:text-ui-subheading [&_h3_span]:text-subtle [&_h3_span]:font-normal [&_h3_span]:text-ui-label",
           "[&_.text-action]:justify-self-start"
         )} aria-label="From Google Health">
           <h3>
@@ -236,18 +242,18 @@ export function SyncPanel({
                 : count(incoming.length, "record")}
             </span>
           </h3>
-          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-[12px] [&_li]:leading-[1.6]">
+          <ul className="sync-rows list-none m-0 p-0 grid gap-3 [&_li]:grid [&_li]:grid-cols-[92px_minmax(0,_1fr)] [&_li]:gap-2.5 [&_li]:items-start [&_li]:text-ui-label [&_li]:leading-[1.6]">
             {(showAll ? incoming : incoming.slice(0, SHOWN)).map((row, index) => (
               <IncomingRow row={row} key={`${row.text}-${index}`} />
             ))}
           </ul>
           {incoming.length > SHOWN && !showAll && (
-            <button className="text-action border-0 bg-none bg-transparent py-0.5 px-0 text-muted-foreground text-[12px] font-[590] pointer-hover:[&:hover]:text-foreground" type="button" onClick={() => setShowAll(true)}>
+            <button className="text-action border-0 bg-none bg-transparent py-0.5 px-0 text-muted-foreground text-ui-label font-control pointer-hover:[&:hover]:text-foreground" type="button" onClick={() => setShowAll(true)}>
               Show all {incoming.length}
             </button>
           )}
           {kept.length > 0 && (
-            <p className="sync-hint text-subtle text-[11.5px] leading-[1.5]">
+            <p className="sync-hint text-subtle text-ui-detail leading-[1.5]">
               Kept your local version of {count(kept.length, "record")}:{" "}
               {kept.map((row) => row.path ?? row.text).join(", ")}
             </p>
@@ -257,10 +263,10 @@ export function SyncPanel({
 
       {last && (
         <details className={cn(
-          "sync-output px-6 pt-3 pb-5 max-[761px]:px-5 text-[12px] [&_summary]:cursor-pointer [&_summary]:py-1 [&_summary]:text-subtle [&_code]:block",
-          "[&_code]:[margin:10px_0_6px] [&_code]:[font:11px/1.5_var(--mono)] [&_code]:text-muted-foreground",
+          "sync-output px-6 pt-3 pb-5 max-[761px]:px-5 text-ui-label [&_summary]:cursor-pointer [&_summary]:py-1 [&_summary]:text-subtle [&_code]:block",
+          "[&_code]:[margin:10px_0_6px] [&_code]:[font:11px/1.5_var(--ds-font-code)] [&_code]:text-muted-foreground",
           "[&_code]:wrap-anywhere [&_pre]:m-0 [&_pre]:whitespace-pre-wrap [&_pre]:wrap-anywhere",
-          "[&_pre]:[font:11px/1.6_var(--mono)] [&_pre]:text-muted-foreground [&_pre.err]:text-destructive"
+          "[&_pre]:[font:11px/1.6_var(--ds-font-code)] [&_pre]:text-muted-foreground [&_pre.err]:text-destructive"
         )}>
           <summary>Command output</summary>
           <code>{last.result.command}</code>

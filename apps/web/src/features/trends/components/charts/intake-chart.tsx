@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/design-system/lib/cn";
 import { macroEnergy, runs } from "@/features/trends/lib/series";
 import { niceStep, type DayScale } from "@/features/trends/lib/scale";
 import type { Series } from "@/lib/types";
@@ -68,7 +68,7 @@ export function IntakeChart({
             "macro-legend flex basis-full flex-wrap gap-y-1.5 gap-x-3 mt-1 [&_span]:inline-flex [&_span]:items-center",
             "[&_span]:gap-[5px] [&_span::before]:[content:''] [&_span::before]:w-[7px] [&_span::before]:h-[7px]",
             "[&_span::before]:rounded-[2px] [&_span::before]:[background:currentColor] [&_.protein]:text-protein",
-            "[&_.carbs]:text-carbs [&_.fat]:text-fat [&_.unaccounted]:[color:#8e8e93] [&_.over]:text-over",
+            "[&_.carbs]:text-carbs [&_.fat]:text-fat [&_.unaccounted]:[color:var(--ds-color-text-chart-detail)] [&_.over]:text-over",
             "[&_.burned]:text-energy [&_.burned::before]:h-0.5 [&_.burned::before]:w-3 [&_.burned::before]:rounded-[2px]",
             "[&_.goal]:text-muted-foreground [&_.goal::before]:h-0 [&_.goal::before]:w-3 [&_.goal::before]:rounded-[0]",
             "[&_.goal::before]:bg-none [&_.goal::before]:bg-transparent [&_.goal::before]:border-t-[1.5px] [&_.goal::before]:[border-top-style:dashed]",
@@ -115,7 +115,7 @@ export function IntakeChart({
                 y2={y(target)}
               />
               <text
-                className="viz-tick fill-chart-tick [font-family:var(--sans)] text-[10px]"
+                className="viz-tick fill-chart-tick [font-family:var(--ds-font-body)] text-ui-micro"
                 x={scale.width - scale.right + 4}
                 y={y(target) + 3.5}
               >

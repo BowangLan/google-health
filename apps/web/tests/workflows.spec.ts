@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { food, mockHealth, shift, TODAY, PAST } from "./fixtures";
 
-test("one dashboard shows the selected day beside its trends, with no page navigation", async ({
+test("one dashboard puts the selected-day journal before trends, without route changes", async ({
   page,
 }) => {
   await mockHealth(page);
@@ -73,8 +73,8 @@ test("food and reused food use editable dates and times; weight uses the selecte
   await page.clock.setFixedTime(new Date("2026-09-26T01:45:00Z"));
   await page.goto("/#/?date=" + PAST);
   await page.getByRole("button", { name: "Log food", exact: true }).click();
-  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
-  await expect(page.getByLabel(/^Time/)).toHaveValue("18:45");
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
+  await expect(page.getByLabel(/^Time/)).toHaveValue("");
   await page.getByLabel("Date", { exact: true }).fill(PAST);
   await page.getByLabel(/^Time/).fill("09:15");
   await page.getByLabel("What did you eat?").fill("Test dinner");
@@ -123,7 +123,7 @@ test("food and reused food use editable dates and times; weight uses the selecte
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
     "Rice bowl",
   );
-  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
+  await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
   await page.getByLabel("Date", { exact: true }).fill(PAST);
   await page.getByLabel(/^Time/).fill("18:30");
   await page.getByLabel("Amount", { exact: true }).fill("2");
@@ -159,18 +159,19 @@ test("food and reused food use editable dates and times; weight uses the selecte
 test.describe("food defaults in another browser timezone", () => {
   test.use({ timezoneId: "Asia/Tokyo" });
 
-  test("reuse defaults to today and Pacific time, validates the date, and shows the saved day", async ({ page }) => {
+  test("reuse starts on the selected day, uses Pacific time when switched to today, and validates dates", async ({ page }) => {
     await page.clock.setFixedTime(new Date("2026-09-26T01:45:00Z"));
     const state = await mockHealth(page);
     await page.goto("/#/?date=" + PAST);
     await page.getByRole("button", { name: "Reuse Rice bowl", exact: true }).click();
-    await expect(page.getByLabel("Date", { exact: true })).toHaveValue(TODAY);
-    await expect(page.getByLabel(/^Time/)).toHaveValue("18:45");
+    await expect(page.getByLabel("Date", { exact: true })).toHaveValue(PAST);
+    await expect(page.getByLabel(/^Time/)).toHaveValue("");
     await page.getByLabel("Date", { exact: true }).fill("");
     await page.getByRole("dialog").getByRole("button", { name: "Log food", exact: true }).click();
     expect(state.writes).toHaveLength(0);
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.getByLabel("Date", { exact: true }).fill(TODAY);
+    await page.getByLabel(/^Time/).fill("18:45");
     await page.getByRole("dialog").getByRole("button", { name: "Log food", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(state.writes.at(-1)?.body).toMatchObject({
@@ -202,7 +203,7 @@ test("clicking a chart selects that day for the whole dashboard; range survives 
   const picked = new URL(page.url()).hash.match(/date=([\d-]+)/)![1]!;
   await expect(page.locator(".day-title time[datetime='" + picked + "']")).toBeVisible();
   await expect(
-    page.getByText(/New weight entries will be logged to/),
+    page.getByText(/Food and weight entries will be logged to/),
   ).toBeVisible();
   await page.reload();
   await expect(page.locator(".day-title time[datetime='" + picked + "']")).toBeVisible();
@@ -222,7 +223,7 @@ test("day shortcuts work, modal focus is contained, and no numeric key logs food
   await page.keyboard.press("1");
   expect(state.writes).toHaveLength(0);
   await page.keyboard.press("f");
-  await expect(page.getByLabel("Date", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("What did you eat?")).toBeFocused();
   for (let i = 0; i < 8; i++) await page.keyboard.press("Tab");
   expect(
     await page.evaluate(() =>
@@ -292,6 +293,7 @@ test("editing and deleting keep sync consequences; failed logging stays recovera
     path: "food/" + PAST + ".md",
     values: { amount: "2" },
   });
+  await page.getByLabel("More actions for Rice bowl", { exact: true }).click();
   await page
     .getByRole("button", { name: "Delete Rice bowl", exact: true })
     .click();
@@ -390,30 +392,29 @@ test("dark-only styling fits every width from desktop to a small phone", async (
     }
     expect(Math.abs(date!.height - time!.height), "Date and time height at " + width).toBeLessThan(1);
     const search = await page.getByLabel("What did you eat?").boundingBox();
-    expect(search!.y - (time!.y + time!.height), "Gap before food search at " + width).toBeLessThan(45);
+    expect(search!.y + search!.height, "Food search precedes secondary date controls at " + width).toBeLessThan(date!.y);
     expect(await page.getByRole("dialog").evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false);
     await page.getByRole("dialog").screenshot({ path: test.info().outputPath("food-composer-" + width + ".png") });
   }
 });
 
-test("the energy ring measures against calories burned and the budget uses the deficit goal", async ({
-  page,
-}) => {
+test("gauges compare with measured burn and the selected-day budget uses the deficit", async ({ page }) => {
   const state = await mockHealth(page);
   await page.goto("/");
   const nutrition = page.getByRole("region", { name: "Nutrition for selected day" });
-  await expect(nutrition).toContainText("/ 2,400 kcal burned");
+  await expect(nutrition).toContainText("2,400 kcal burned so far");
   await expect(nutrition).toContainText("25% of burned so far");
-  // Today in the series: 1,800 + (89 % 4) * 100 eaten, 1,950 + (89 % 3) * 100 burned.
-  const budget = page.locator(".stat.budget");
-  await expect(budget).toContainText("2,150 burned, 1,900 eaten");
-  await expect(budget).toContainText("250 kcal left");
+  const budget = page.getByRole("region", { name: "Calories burned for selected day" });
+  await expect(budget).toContainText("1,800 kcal left");
+  await expect(page.locator(".stat.budget")).toHaveCount(0);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByLabel("Daily deficit goal (kcal)").fill("500");
   await page.getByRole("button", { name: "Save targets", exact: true }).click();
   expect(state.writes.at(-1)?.body).toMatchObject({ daily_deficit_kcal: "500" });
-  await expect(budget).toContainText("250 kcal over");
+  await expect(budget).toContainText("1,300 kcal left");
   await expect(budget).toContainText("500 deficit");
+  // A different target does not change the measured burn denominator.
+  await expect(nutrition).toContainText("25% of burned so far");
 });
 
 test("the calorie chart draws burned as a line and highlights only intake above it", async ({
@@ -464,9 +465,8 @@ test("weight shows the change from the previous weigh-in and burned shows the co
   const burned = page.getByRole("region", { name: "Calories burned for selected day" });
   await expect(weight.locator(".delta.good")).toHaveText("−0.8 lb vs yesterday");
   await expect(burned.locator(".delta.good")).toHaveText("1,800 kcal left");
-  const ratio = page.locator(".ring-legend .energy .ring-ratio");
-  await expect(ratio).toHaveClass(/\bok\b/);
-  await expect(ratio).toHaveText("25% of burned so far");
+  const ratio = page.getByRole("region", { name: "Nutrition for selected day" });
+  await expect(ratio).toContainText("25% of burned so far");
 
   // Within 10% of the 2,400 allowance: closing, yellow.
   eaten = 2200;
@@ -474,11 +474,59 @@ test("weight shows the change from the previous weigh-in and burned shows the co
   await page.getByRole("button", { name: "Previous day", exact: true }).click();
   await expect(weight.locator(".delta.bad")).toHaveText("+1.2 lb vs yesterday");
   await expect(burned.locator(".delta.warn")).toHaveText("200 kcal under budget");
-  await expect(ratio).toHaveClass(/\bclosing\b/);
+  await expect(ratio).toContainText("92% of burned");
 
   eaten = 2500;
   await page.getByRole("button", { name: "Previous day", exact: true }).click();
   await expect(burned.locator(".delta.bad")).toHaveText("100 kcal over budget");
-  await expect(ratio).toHaveClass(/\bover\b/);
-  await expect(ratio).toHaveText("104% of burned");
+  await expect(ratio).toContainText("100 kcal over burned");
+});
+
+
+test("section navigation keeps the selected date and trend range", async ({ page }) => {
+  await mockHealth(page);
+  await page.goto("/#/?date=" + PAST + "&days=30");
+  const context = page.url();
+  await page.getByRole("button", { name: "Trends", exact: true }).click();
+  await expect(page).toHaveURL(context);
+  await page.getByRole("button", { name: "Journal", exact: true }).click();
+  await expect(page).toHaveURL(context);
+  await expect(page.locator('.day-title time')).toHaveAttribute('datetime', PAST);
+});
+
+test("settings prevents duplicate saves and keeps a failed save editable", async ({ page }) => {
+  const state = await mockHealth(page);
+  let finish: () => void = () => {};
+  const wait = new Promise<void>((resolve) => { finish = resolve; });
+  let requests = 0;
+  await page.route("**/api/targets", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    requests += 1;
+    await wait;
+    return route.fulfill({ status: 503, json: { error: "Targets could not be saved" } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Save targets", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saving…", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Daily protein target (g)")).toBeDisabled();
+  await page.getByRole("dialog").locator("form").evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  expect(requests).toBe(1);
+  expect(state.writes).toHaveLength(0);
+  finish();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Targets could not be saved");
+  await expect(page.getByRole("button", { name: "Save targets", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Daily protein target (g)")).toBeEnabled();
+});
+
+
+test("invalid settings show a local error without sending targets", async ({ page }) => {
+  const state = await mockHealth(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Daily protein target (g)").fill("0");
+  await page.getByRole("button", { name: "Save targets", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("greater than 0");
+  expect(state.writes).toHaveLength(0);
+  await expect(page.getByRole("button", { name: "Save targets", exact: true })).toBeEnabled();
 });

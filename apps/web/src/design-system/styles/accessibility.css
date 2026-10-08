@@ -1,0 +1,33 @@
+@layer base {
+@media (prefers-contrast: more) {
+  :root {
+    --ds-color-border: var(--ds-p-white-22);
+    --ds-color-border-strong: var(--ds-p-white-35);
+    --ds-color-text-subtle: var(--ds-p-gray-300);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+  button:active:not(:disabled),
+  .island:has(.island-pill:active) {
+    transform: none;
+    scale: none;
+  }
+}
+html[data-input="keyboard"] *,
+html[data-input="keyboard"] *::before,
+html[data-input="keyboard"] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+html[data-input="keyboard"] button:active {
+  transform: none;
+}
+
+}

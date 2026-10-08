@@ -51,8 +51,8 @@ export function ChartFrame({
   return (
     <figure className="viz m-0 [&_+_.viz]:mt-3 [&_+_.viz]:border-t [&_+_.viz]:[border-top-style:solid] [&_+_.viz]:border-t-border">
       <figcaption className="viz-head flex flex-wrap items-baseline gap-y-1 gap-x-2.5 [padding:14px_18px_6px] [&_.viz-sub:has(.macro-legend)]:contents">
-        <span className="viz-title text-[12px] font-semibold">{title}</span>
-        {subtitle && <span className="viz-sub text-subtle text-[11.5px]">{subtitle}</span>}
+        <span className="viz-title text-ui-label font-semibold">{title}</span>
+        {subtitle && <span className="viz-sub text-subtle text-ui-detail">{subtitle}</span>}
       </figcaption>
       <svg
         viewBox={`0 0 ${scale.width} ${height}`}
@@ -86,7 +86,7 @@ export function ChartFrame({
               y2={y(value)}
             />
             <text
-              className="viz-tick fill-chart-tick [font-family:var(--sans)] text-[10px]"
+              className="viz-tick fill-chart-tick [font-family:var(--ds-font-body)] text-ui-micro"
               x={scale.left - 8}
               y={y(value) + 3.5}
               textAnchor="end"
@@ -123,7 +123,7 @@ export function ChartFrame({
           scale.ticks().map((day) => (
             <text
               key={day}
-              className="viz-tick fill-chart-tick [font-family:var(--sans)] text-[10px]"
+              className="viz-tick fill-chart-tick [font-family:var(--ds-font-body)] text-ui-micro"
               x={scale.x(day)}
               y={height - 6}
               textAnchor="middle"
@@ -135,7 +135,7 @@ export function ChartFrame({
             </text>
           ))}
       </svg>
-      {note && <div className="viz-note [padding:2px_18px_6px] text-subtle text-[11.5px]">{note}</div>}
+      {note && <div className="viz-note [padding:2px_18px_6px] text-subtle text-ui-detail">{note}</div>}
     </figure>
   );
 }

@@ -1,6 +1,6 @@
 /** Throwaway design D: capture first; select, adjust, inspect, then confirm. */
 import { useState } from "react";
-import { IconAdd, IconFood, IconWeight, IconSync, IconEdit, IconNext, IconLedger, IconAgain } from "@/lib/icons";
+import { IconAdd, IconFood, IconWeight, IconSync, IconEdit, IconNext, IconLedger, IconAgain } from "@/design-system/foundations/icons";
 import { FOOD_LIBRARY } from "./data";
 import { dateLabel, type DesignProps, type DemoFood } from "./types";
 import "./capture.css";

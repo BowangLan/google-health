@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/design-system/lib/cn";
 import type { MonthCell, MonthView, Targets } from "@/lib/types";
 import { num, shiftDay } from "@/lib/format";
 
@@ -21,7 +21,7 @@ function Cell({
   compact: boolean;
   onSelect: (day: string) => void;
 }) {
-  const classes = ["cell relative h-14 border border-solid border-[transparent] rounded-[14px] bg-transparent text-foreground flex flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-[650] [&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future:not(.selected)]:text-subtle [&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:#52525b] pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-[12px]"];
+  const classes = ["cell relative h-14 border border-solid border-[transparent] rounded-notice bg-transparent text-foreground flex flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-display [&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future:not(.selected)]:text-subtle [&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:var(--ds-color-on-action-muted)] pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-lg"];
   if (day === today) classes.push("today");
   if (day === selected) classes.push("selected");
   if (day > today) classes.push("future");
@@ -53,7 +53,7 @@ function Cell({
         .join(". ")}
       onClick={() => onSelect(day)}
     >
-      <span className="cell-day text-[13px]">{Number(day.slice(8))}</span>
+      <span className="cell-day text-ui-body">{Number(day.slice(8))}</span>
       <span className={cn("cell-kcal h-3 text-[9.5px] leading-3 text-subtle max-[761px]:text-[8px]", !hasFood && "invisible")} aria-hidden={!hasFood}>
         {hasFood ? num(cell!.kcal) : "No food"}
       </span>
@@ -91,7 +91,7 @@ function Cell({
           )}
           {worst && (
             <span
-              className={`cell-state absolute top-[5px] right-[5px] w-[5px] h-[5px] rounded-full bg-warning ${attention ? "attention" : "pending"}`}
+              className={`cell-state absolute top-[5px] right-[5px] w-[5px] h-[5px] rounded-capsule bg-warning ${attention ? "attention" : "pending"}`}
               title={`${pendingCount} ${attention ? "needing attention" : "unpushed"}`}
             />
           )}
@@ -137,11 +137,11 @@ export function Calendar({
         {cells.map((day, index) =>
           day === null ? (
             <div className={cn(
-              "cell relative h-14 border border-solid border-[transparent] rounded-[14px] bg-transparent text-foreground flex",
-              "flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-[650]",
+              "cell relative h-14 border border-solid border-[transparent] rounded-notice bg-transparent text-foreground flex",
+              "flex-col justify-center items-center gap-0.5 p-1 tabular-nums [&.today:not(.selected)]:text-energy [&.today]:font-display",
               "[&.selected]:bg-primary [&.selected]:text-primary-foreground [&.future:not(.selected)]:text-subtle",
-              "[&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:#52525b]",
-              "pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-[12px] blank"
+              "[&.blank]:pointer-events-none [&.selected_.cell-kcal]:[color:var(--ds-color-on-action-muted)]",
+              "pointer-hover:[&:hover:not(.selected)]:bg-secondary max-[761px]:h-11.5 max-[761px]:rounded-lg blank"
             )} key={`blank-${index}`} />
           ) : (
             <Cell

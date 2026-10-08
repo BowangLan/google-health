@@ -12,7 +12,7 @@
 
 import { useEffect, useId, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn } from "@/design-system/lib/cn";
 
 export interface ActivityData {
   label: string;
